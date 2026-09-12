@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react';
 import {
   ClipboardDocumentListIcon,
   MegaphoneIcon,
@@ -17,6 +17,8 @@ import {
   XCircleIcon,
   ChartBarIcon,
   PhotoIcon,
+  ExclamationTriangleIcon,
+  InformationCircleIcon,
 } from '@heroicons/react/24/outline';
 
 // ============================================================
@@ -81,10 +83,225 @@ interface BlogPost {
 }
 
 // ============================================================
+// FEEDBACK SYSTEM (Toast + Confirm)
+// ============================================================
+
+type ToastType = 'success' | 'error' | 'warning' | 'info';
+
+interface Toast {
+  id: string;
+  type: ToastType;
+  title: string;
+  message?: string;
+}
+
+interface ConfirmOptions {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  variant?: 'danger' | 'default';
+}
+
+interface FeedbackContextValue {
+  showToast: (type: ToastType, title: string, message?: string) => void;
+  showConfirm: (options: ConfirmOptions) => Promise<boolean>;
+}
+
+const FeedbackContext = createContext<FeedbackContextValue | null>(null);
+
+function useFeedback() {
+  const ctx = useContext(FeedbackContext);
+  if (!ctx) throw new Error('useFeedback must be used within FeedbackProvider');
+  return ctx;
+}
+
+function FeedbackProvider({ children }: { children: React.ReactNode }) {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [confirmState, setConfirmState] = useState<{
+    options: ConfirmOptions;
+    resolve: (value: boolean) => void;
+  } | null>(null);
+
+  const showToast = useCallback((type: ToastType, title: string, message?: string) => {
+    const id = Math.random().toString(36).slice(2);
+    setToasts((prev) => [...prev, { id, type, title, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  }, []);
+
+  const dismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const showConfirm = useCallback((options: ConfirmOptions) => {
+    return new Promise<boolean>((resolve) => {
+      setConfirmState({ options, resolve });
+    });
+  }, []);
+
+  const handleConfirmClose = (result: boolean) => {
+    if (confirmState) {
+      confirmState.resolve(result);
+      setConfirmState(null);
+    }
+  };
+
+  return (
+    <FeedbackContext.Provider value={{ showToast, showConfirm }}>
+      {children}
+
+      {/* ─── TOAST STACK ─── */}
+      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-3 pointer-events-none">
+        {toasts.map((toast) => (
+          <ToastItem key={toast.id} toast={toast} onDismiss={() => dismissToast(toast.id)} />
+        ))}
+      </div>
+
+      {/* ─── CONFIRM DIALOG ─── */}
+      {confirmState && (
+        <ConfirmDialog
+          options={confirmState.options}
+          onResolve={handleConfirmClose}
+        />
+      )}
+    </FeedbackContext.Provider>
+  );
+}
+
+function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
+  const styles: Record<ToastType, { bg: string; border: string; icon: React.ReactNode; iconBg: string }> = {
+    success: {
+      bg: 'bg-white',
+      border: 'border-emerald-200',
+      iconBg: 'bg-emerald-100 text-emerald-600',
+      icon: <CheckCircleIcon className="w-5 h-5" />,
+    },
+    error: {
+      bg: 'bg-white',
+      border: 'border-red-200',
+      iconBg: 'bg-red-100 text-red-600',
+      icon: <XCircleIcon className="w-5 h-5" />,
+    },
+    warning: {
+      bg: 'bg-white',
+      border: 'border-amber-200',
+      iconBg: 'bg-amber-100 text-amber-600',
+      icon: <ExclamationTriangleIcon className="w-5 h-5" />,
+    },
+    info: {
+      bg: 'bg-white',
+      border: 'border-teal-200',
+      iconBg: 'bg-teal-100 text-teal-600',
+      icon: <InformationCircleIcon className="w-5 h-5" />,
+    },
+  };
+
+  const s = styles[toast.type];
+
+  return (
+    <div
+      className={`pointer-events-auto w-80 ${s.bg} border ${s.border} rounded-2xl shadow-lg shadow-black/5 p-4 flex items-start gap-3 animate-[slideIn_0.25s_ease-out]`}
+      style={{
+        animation: 'slideIn 0.25s ease-out',
+      }}
+    >
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${s.iconBg}`}>
+        {s.icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-gray-800">{toast.title}</p>
+        {toast.message && <p className="text-xs text-gray-500 mt-0.5 break-words">{toast.message}</p>}
+      </div>
+      <button
+        onClick={onDismiss}
+        className="p-1 text-gray-300 hover:text-gray-500 rounded-lg transition flex-shrink-0"
+      >
+        <XMarkIcon className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+function ConfirmDialog({
+  options,
+  onResolve,
+}: {
+  options: ConfirmOptions;
+  onResolve: (result: boolean) => void;
+}) {
+  const isDanger = options.variant === 'danger';
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onResolve(false);
+      if (e.key === 'Enter') onResolve(true);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onResolve]);
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
+        <div className="p-6">
+          <div className="flex items-start gap-4">
+            <div
+              className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+                isDanger ? 'bg-red-100 text-red-600' : 'bg-teal-100 text-teal-600'
+              }`}
+            >
+              {isDanger ? (
+                <ExclamationTriangleIcon className="w-6 h-6" />
+              ) : (
+                <InformationCircleIcon className="w-6 h-6" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-bold text-gray-800">{options.title}</h3>
+              <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">{options.message}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3">
+          <button
+            onClick={() => onResolve(false)}
+            className="px-5 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded-xl transition"
+          >
+            {options.cancelLabel || 'Cancel'}
+          </button>
+          <button
+            onClick={() => onResolve(true)}
+            className={`px-5 py-2.5 text-sm font-semibold text-white rounded-xl transition shadow-sm ${
+              isDanger
+                ? 'bg-red-600 hover:bg-red-700 shadow-red-600/20'
+                : 'bg-teal-600 hover:bg-teal-700 shadow-teal-600/20'
+            }`}
+          >
+            {options.confirmLabel || 'Confirm'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN COMPONENT
 // ============================================================
 
 export default function AdminContentPage() {
+  return (
+    <FeedbackProvider>
+      <AdminContentPageInner />
+    </FeedbackProvider>
+  );
+}
+
+function AdminContentPageInner() {
+  const { showToast, showConfirm } = useFeedback();
+
   const [activeSection, setActiveSection] = useState<'services' | 'announcements' | 'faqs' | 'blog'>('services');
 
   const [services, setServices] = useState<ManageService[]>([]);
@@ -177,6 +394,7 @@ export default function AdminContentPage() {
     fetchAnnouncements();
     fetchFaqs();
     fetchBlogPosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ============================================================
@@ -193,11 +411,12 @@ export default function AdminContentPage() {
       if (res.ok) {
         fetchServices();
         setIsAddServiceOpen(false);
+        showToast('success', 'Service created', `"${data.name}" was added successfully.`);
       } else {
-        alert('Failed to create service');
+        showToast('error', 'Failed to create service', 'Please check your input and try again.');
       }
     } catch (error) {
-      alert('Error creating service');
+      showToast('error', 'Network error', 'Could not connect to the server.');
     }
   };
 
@@ -211,25 +430,36 @@ export default function AdminContentPage() {
       if (res.ok) {
         fetchServices();
         setEditingService(null);
+        showToast('success', 'Service updated', `"${service.name}" was saved successfully.`);
       } else {
-        alert('Failed to update service');
+        showToast('error', 'Failed to update service', 'Please check your input and try again.');
       }
     } catch (error) {
-      alert('Error updating service');
+      showToast('error', 'Network error', 'Could not connect to the server.');
     }
   };
 
   const handleDeleteService = async (id: string) => {
-    if (!confirm('Delete this service?')) return;
+    const service = services.find((s) => s.id === id);
+    const confirmed = await showConfirm({
+      title: 'Delete service?',
+      message: `Are you sure you want to delete "${service?.name || 'this service'}"? This action cannot be undone.`,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
     try {
       const res = await fetch(`/api/services/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchServices();
+        showToast('success', 'Service deleted', 'The service was removed.');
       } else {
-        alert('Failed to delete service');
+        showToast('error', 'Failed to delete service', 'Please try again.');
       }
     } catch (error) {
-      alert('Error deleting service');
+      showToast('error', 'Network error', 'Could not connect to the server.');
     }
   };
 
@@ -247,11 +477,12 @@ export default function AdminContentPage() {
       if (res.ok) {
         fetchAnnouncements();
         setIsAddAnnouncementOpen(false);
+        showToast('success', 'Announcement created', `"${data.title}" was added.`);
       } else {
-        alert('Failed to create announcement');
+        showToast('error', 'Failed to create announcement', 'Please check your input and try again.');
       }
     } catch (error) {
-      alert('Error creating announcement');
+      showToast('error', 'Network error', 'Could not connect to the server.');
     }
   };
 
@@ -265,25 +496,36 @@ export default function AdminContentPage() {
       if (res.ok) {
         fetchAnnouncements();
         setEditingAnnouncement(null);
+        showToast('success', 'Announcement updated', `"${ann.title}" was saved.`);
       } else {
-        alert('Failed to update announcement');
+        showToast('error', 'Failed to update announcement', 'Please check your input and try again.');
       }
     } catch (error) {
-      alert('Error updating announcement');
+      showToast('error', 'Network error', 'Could not connect to the server.');
     }
   };
 
   const handleDeleteAnnouncement = async (id: string) => {
-    if (!confirm('Delete this announcement?')) return;
+    const ann = announcements.find((a) => a.id === id);
+    const confirmed = await showConfirm({
+      title: 'Delete announcement?',
+      message: `Are you sure you want to delete "${ann?.title || 'this announcement'}"? This action cannot be undone.`,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
     try {
       const res = await fetch(`/api/announcements/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchAnnouncements();
+        showToast('success', 'Announcement deleted', 'The announcement was removed.');
       } else {
-        alert('Failed to delete announcement');
+        showToast('error', 'Failed to delete announcement', 'Please try again.');
       }
     } catch (error) {
-      alert('Error deleting announcement');
+      showToast('error', 'Network error', 'Could not connect to the server.');
     }
   };
 
@@ -301,11 +543,12 @@ export default function AdminContentPage() {
       if (res.ok) {
         fetchFaqs();
         setIsAddFaqOpen(false);
+        showToast('success', 'FAQ created', 'Your FAQ was added successfully.');
       } else {
-        alert('Failed to create FAQ');
+        showToast('error', 'Failed to create FAQ', 'Please check your input and try again.');
       }
     } catch (error) {
-      alert('Error creating FAQ');
+      showToast('error', 'Network error', 'Could not connect to the server.');
     }
   };
 
@@ -319,25 +562,35 @@ export default function AdminContentPage() {
       if (res.ok) {
         fetchFaqs();
         setEditingFaq(null);
+        showToast('success', 'FAQ updated', 'Your changes were saved.');
       } else {
-        alert('Failed to update FAQ');
+        showToast('error', 'Failed to update FAQ', 'Please check your input and try again.');
       }
     } catch (error) {
-      alert('Error updating FAQ');
+      showToast('error', 'Network error', 'Could not connect to the server.');
     }
   };
 
   const handleDeleteFaq = async (id: string) => {
-    if (!confirm('Delete this FAQ?')) return;
+    const confirmed = await showConfirm({
+      title: 'Delete FAQ?',
+      message: 'Are you sure you want to delete this FAQ? This action cannot be undone.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
     try {
       const res = await fetch(`/api/faqs/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchFaqs();
+        showToast('success', 'FAQ deleted', 'The FAQ was removed.');
       } else {
-        alert('Failed to delete FAQ');
+        showToast('error', 'Failed to delete FAQ', 'Please try again.');
       }
     } catch (error) {
-      alert('Error deleting FAQ');
+      showToast('error', 'Network error', 'Could not connect to the server.');
     }
   };
 
@@ -355,11 +608,12 @@ export default function AdminContentPage() {
       if (res.ok) {
         fetchBlogPosts();
         setIsAddBlogOpen(false);
+        showToast('success', 'Blog post created', `"${data.title}" was published.`);
       } else {
-        alert('Failed to create blog post');
+        showToast('error', 'Failed to create blog post', 'Please check your input and try again.');
       }
     } catch (error) {
-      alert('Error creating blog post');
+      showToast('error', 'Network error', 'Could not connect to the server.');
     }
   };
 
@@ -373,25 +627,36 @@ export default function AdminContentPage() {
       if (res.ok) {
         fetchBlogPosts();
         setEditingBlog(null);
+        showToast('success', 'Blog post updated', `"${blog.title}" was saved.`);
       } else {
-        alert('Failed to update blog post');
+        showToast('error', 'Failed to update blog post', 'Please check your input and try again.');
       }
     } catch (error) {
-      alert('Error updating blog post');
+      showToast('error', 'Network error', 'Could not connect to the server.');
     }
   };
 
   const handleDeleteBlog = async (id: string) => {
-    if (!confirm('Delete this blog post?')) return;
+    const blog = blogPosts.find((b) => b.id === id);
+    const confirmed = await showConfirm({
+      title: 'Delete blog post?',
+      message: `Are you sure you want to delete "${blog?.title || 'this post'}"? This action cannot be undone.`,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
     try {
       const res = await fetch(`/api/blog/${id}`, { method: 'DELETE' });
       if (res.ok) {
         fetchBlogPosts();
+        showToast('success', 'Blog post deleted', 'The post was removed.');
       } else {
-        alert('Failed to delete blog post');
+        showToast('error', 'Failed to delete blog post', 'Please try again.');
       }
     } catch (error) {
-      alert('Error deleting blog post');
+      showToast('error', 'Network error', 'Could not connect to the server.');
     }
   };
 
@@ -407,93 +672,109 @@ export default function AdminContentPage() {
   ];
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 max-w-7xl mx-auto p-6">
-      <aside className="w-full md:w-56 bg-white rounded-2xl shadow-sm border border-gray-100/80 p-4 flex-shrink-0 h-fit">
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 mb-3">Content Sections</h2>
-        <nav className="space-y-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveSection(item.id as typeof activeSection)}
-                className={`flex items-center gap-3 w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  activeSection === item.id
-                    ? 'bg-teal-50 text-teal-700 shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-      </aside>
+    <>
+      {/* Keyframes for toast animation */}
+      <style jsx global>{`
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateX(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+      `}</style>
 
-      <div className="flex-1 min-w-0">
-        {activeSection === 'services' && (
-          <ServicesManager
-            services={services}
-            loading={loading.services}
-            onAdd={() => setIsAddServiceOpen(true)}
-            onEdit={(svc) => setEditingService(svc)}
-            onDelete={handleDeleteService}
-            isAddOpen={isAddServiceOpen}
-            onCloseAdd={() => setIsAddServiceOpen(false)}
-            onAddService={handleAddService}
-            editingService={editingService}
-            onCloseEdit={() => setEditingService(null)}
-            onEditService={handleEditService}
-          />
-        )}
-        {activeSection === 'announcements' && (
-          <AnnouncementsManager
-            announcements={announcements}
-            loading={loading.announcements}
-            onAdd={() => setIsAddAnnouncementOpen(true)}
-            onEdit={(ann) => setEditingAnnouncement(ann)}
-            onDelete={handleDeleteAnnouncement}
-            isAddOpen={isAddAnnouncementOpen}
-            onCloseAdd={() => setIsAddAnnouncementOpen(false)}
-            onAddAnnouncement={handleAddAnnouncement}
-            editingAnnouncement={editingAnnouncement}
-            onCloseEdit={() => setEditingAnnouncement(null)}
-            onEditAnnouncement={handleEditAnnouncement}
-          />
-        )}
-        {activeSection === 'faqs' && (
-          <FAQsManager
-            faqs={faqs}
-            loading={loading.faqs}
-            onAdd={() => setIsAddFaqOpen(true)}
-            onEdit={(faq) => setEditingFaq(faq)}
-            onDelete={handleDeleteFaq}
-            isAddOpen={isAddFaqOpen}
-            onCloseAdd={() => setIsAddFaqOpen(false)}
-            onAddFaq={handleAddFaq}
-            editingFaq={editingFaq}
-            onCloseEdit={() => setEditingFaq(null)}
-            onEditFaq={handleEditFaq}
-          />
-        )}
-        {activeSection === 'blog' && (
-          <BlogManager
-            blogPosts={blogPosts}
-            loading={loading.blog}
-            onAdd={() => setIsAddBlogOpen(true)}
-            onEdit={(blog) => setEditingBlog(blog)}
-            onDelete={handleDeleteBlog}
-            isAddOpen={isAddBlogOpen}
-            onCloseAdd={() => setIsAddBlogOpen(false)}
-            onAddBlog={handleAddBlog}
-            editingBlog={editingBlog}
-            onCloseEdit={() => setEditingBlog(null)}
-            onEditBlog={handleEditBlog}
-          />
-        )}
+      <div className="flex flex-col md:flex-row gap-6 max-w-7xl mx-auto p-6">
+        <aside className="w-full md:w-56 bg-white rounded-2xl shadow-sm border border-gray-100/80 p-4 flex-shrink-0 h-fit">
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-3 mb-3">Content Sections</h2>
+          <nav className="space-y-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveSection(item.id as typeof activeSection)}
+                  className={`flex items-center gap-3 w-full px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                    activeSection === item.id
+                      ? 'bg-teal-50 text-teal-700 shadow-sm'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <Icon className="w-5 h-5" />
+                  {item.label}
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+
+        <div className="flex-1 min-w-0">
+          {activeSection === 'services' && (
+            <ServicesManager
+              services={services}
+              loading={loading.services}
+              onAdd={() => setIsAddServiceOpen(true)}
+              onEdit={(svc) => setEditingService(svc)}
+              onDelete={handleDeleteService}
+              isAddOpen={isAddServiceOpen}
+              onCloseAdd={() => setIsAddServiceOpen(false)}
+              onAddService={handleAddService}
+              editingService={editingService}
+              onCloseEdit={() => setEditingService(null)}
+              onEditService={handleEditService}
+            />
+          )}
+          {activeSection === 'announcements' && (
+            <AnnouncementsManager
+              announcements={announcements}
+              loading={loading.announcements}
+              onAdd={() => setIsAddAnnouncementOpen(true)}
+              onEdit={(ann) => setEditingAnnouncement(ann)}
+              onDelete={handleDeleteAnnouncement}
+              isAddOpen={isAddAnnouncementOpen}
+              onCloseAdd={() => setIsAddAnnouncementOpen(false)}
+              onAddAnnouncement={handleAddAnnouncement}
+              editingAnnouncement={editingAnnouncement}
+              onCloseEdit={() => setEditingAnnouncement(null)}
+              onEditAnnouncement={handleEditAnnouncement}
+            />
+          )}
+          {activeSection === 'faqs' && (
+            <FAQsManager
+              faqs={faqs}
+              loading={loading.faqs}
+              onAdd={() => setIsAddFaqOpen(true)}
+              onEdit={(faq) => setEditingFaq(faq)}
+              onDelete={handleDeleteFaq}
+              isAddOpen={isAddFaqOpen}
+              onCloseAdd={() => setIsAddFaqOpen(false)}
+              onAddFaq={handleAddFaq}
+              editingFaq={editingFaq}
+              onCloseEdit={() => setEditingFaq(null)}
+              onEditFaq={handleEditFaq}
+            />
+          )}
+          {activeSection === 'blog' && (
+            <BlogManager
+              blogPosts={blogPosts}
+              loading={loading.blog}
+              onAdd={() => setIsAddBlogOpen(true)}
+              onEdit={(blog) => setEditingBlog(blog)}
+              onDelete={handleDeleteBlog}
+              isAddOpen={isAddBlogOpen}
+              onCloseAdd={() => setIsAddBlogOpen(false)}
+              onAddBlog={handleAddBlog}
+              editingBlog={editingBlog}
+              onCloseEdit={() => setEditingBlog(null)}
+              onEditBlog={handleEditBlog}
+            />
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
