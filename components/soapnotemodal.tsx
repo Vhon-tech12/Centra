@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback, createContext, useContext } from "react";
 import { useSession } from "next-auth/react";
 import { ActionChips } from "./UIHelpers";
 import PrescriptionModal, { Prescription } from "./PrescriptionModal";
@@ -10,6 +10,213 @@ import { EducationalMaterial } from "@/types/EducationalMaterial";
 import html2canvas from "html2canvas";
 import ClinicalRoom from "./ClinicalRoom";
 import jsPDF from "jspdf";
+import {
+  XMarkIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  ExclamationTriangleIcon,
+  InformationCircleIcon,
+} from "@heroicons/react/24/outline";
+
+// ============================================================
+// FEEDBACK SYSTEM (Toast + Confirm)
+// ============================================================
+
+type ToastType = "success" | "error" | "warning" | "info";
+
+interface Toast {
+  id: string;
+  type: ToastType;
+  title: string;
+  message?: string;
+}
+
+interface ConfirmOptions {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  variant?: "danger" | "default";
+}
+
+interface FeedbackContextValue {
+  showToast: (type: ToastType, title: string, message?: string) => void;
+  showConfirm: (options: ConfirmOptions) => Promise<boolean>;
+}
+
+const FeedbackContext = createContext<FeedbackContextValue | null>(null);
+
+function useFeedback() {
+  const ctx = useContext(FeedbackContext);
+  if (!ctx) throw new Error("useFeedback must be used within FeedbackProvider");
+  return ctx;
+}
+
+function FeedbackProvider({ children }: { children: React.ReactNode }) {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [confirmState, setConfirmState] = useState<{
+    options: ConfirmOptions;
+    resolve: (value: boolean) => void;
+  } | null>(null);
+
+  const showToast = useCallback((type: ToastType, title: string, message?: string) => {
+    const id = Math.random().toString(36).slice(2);
+    setToasts((prev) => [...prev, { id, type, title, message }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  }, []);
+
+  const dismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const showConfirm = useCallback((options: ConfirmOptions) => {
+    return new Promise<boolean>((resolve) => {
+      setConfirmState({ options, resolve });
+    });
+  }, []);
+
+  const handleConfirmClose = (result: boolean) => {
+    if (confirmState) {
+      confirmState.resolve(result);
+      setConfirmState(null);
+    }
+  };
+
+  return (
+    <FeedbackContext.Provider value={{ showToast, showConfirm }}>
+      {children}
+
+      {/* Toast stack */}
+      <div className="fixed top-4 right-4 z-[200] flex flex-col gap-3 pointer-events-none">
+        {toasts.map((toast) => (
+          <ToastItem key={toast.id} toast={toast} onDismiss={() => dismissToast(toast.id)} />
+        ))}
+      </div>
+
+      {/* Confirm dialog */}
+      {confirmState && (
+        <ConfirmDialog options={confirmState.options} onResolve={handleConfirmClose} />
+      )}
+    </FeedbackContext.Provider>
+  );
+}
+
+function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
+  const styles: Record<ToastType, { border: string; iconBg: string; icon: React.ReactNode }> = {
+    success: {
+      border: "border-emerald-200",
+      iconBg: "bg-emerald-100 text-emerald-600",
+      icon: <CheckCircleIcon className="w-5 h-5" />,
+    },
+    error: {
+      border: "border-red-200",
+      iconBg: "bg-red-100 text-red-600",
+      icon: <XCircleIcon className="w-5 h-5" />,
+    },
+    warning: {
+      border: "border-amber-200",
+      iconBg: "bg-amber-100 text-amber-600",
+      icon: <ExclamationTriangleIcon className="w-5 h-5" />,
+    },
+    info: {
+      border: "border-cyan-200",
+      iconBg: "bg-cyan-100 text-cyan-600",
+      icon: <InformationCircleIcon className="w-5 h-5" />,
+    },
+  };
+
+  const s = styles[toast.type];
+
+  return (
+    <div
+      className={`pointer-events-auto w-80 bg-white border ${s.border} rounded-2xl shadow-lg shadow-black/5 p-4 flex items-start gap-3`}
+      style={{ animation: "slideIn 0.25s ease-out" }}
+    >
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${s.iconBg}`}>
+        {s.icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-gray-800">{toast.title}</p>
+        {toast.message && <p className="text-xs text-gray-500 mt-0.5 break-words">{toast.message}</p>}
+      </div>
+      <button
+        onClick={onDismiss}
+        className="p-1 text-gray-300 hover:text-gray-500 rounded-lg transition flex-shrink-0"
+      >
+        <XMarkIcon className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
+function ConfirmDialog({
+  options,
+  onResolve,
+}: {
+  options: ConfirmOptions;
+  onResolve: (result: boolean) => void;
+}) {
+  const isDanger = options.variant === "danger";
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onResolve(false);
+      if (e.key === "Enter") onResolve(true);
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [onResolve]);
+
+  return (
+    <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
+        <div className="p-6">
+          <div className="flex items-start gap-4">
+            <div
+              className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+                isDanger ? "bg-red-100 text-red-600" : "bg-cyan-100 text-cyan-600"
+              }`}
+            >
+              {isDanger ? (
+                <ExclamationTriangleIcon className="w-6 h-6" />
+              ) : (
+                <InformationCircleIcon className="w-6 h-6" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-bold text-gray-800">{options.title}</h3>
+              <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">{options.message}</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3">
+          <button
+            onClick={() => onResolve(false)}
+            className="px-5 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded-xl transition"
+          >
+            {options.cancelLabel || "Cancel"}
+          </button>
+          <button
+            onClick={() => onResolve(true)}
+            className={`px-5 py-2.5 text-sm font-semibold text-white rounded-xl transition shadow-sm ${
+              isDanger
+                ? "bg-red-600 hover:bg-red-700 shadow-red-600/20"
+                : "bg-cyan-600 hover:bg-cyan-700 shadow-cyan-600/20"
+            }`}
+          >
+            {options.confirmLabel || "Confirm"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// TYPES & HELPERS
+// ============================================================
 
 type Patient = {
   name: string;
@@ -322,6 +529,10 @@ async function safeJson(res: Response) {
   }
 }
 
+// ============================================================
+// SOAP NOTE MODAL (WRAPPED WITH FEEDBACK PROVIDER)
+// ============================================================
+
 const SoapNoteModal = ({
   open,
   onClose,
@@ -333,7 +544,43 @@ const SoapNoteModal = ({
   patient: Patient | null;
   onSaved?: () => void;
 }) => {
+  return (
+    <FeedbackProvider>
+      <style jsx global>{`
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateX(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+      `}</style>
+      <SoapNoteModalInner
+        open={open}
+        onClose={onClose}
+        patient={patient}
+        onSaved={onSaved}
+      />
+    </FeedbackProvider>
+  );
+};
+
+function SoapNoteModalInner({
+  open,
+  onClose,
+  patient,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  patient: Patient | null;
+  onSaved?: () => void;
+}) {
   const { data: session, status } = useSession();
+  const { showToast, showConfirm } = useFeedback();
 
   const [openPrescription, setOpenPrescription] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -406,7 +653,7 @@ const SoapNoteModal = ({
         instructions:
           typeof rx?.instructions === "string" ? rx.instructions : "",
       }))
-      .filter((rx: Prescription) => rx.generic.trim().length > 0); // ✅ FIXED: added type annotation
+      .filter((rx: Prescription) => rx.generic.trim().length > 0);
 
     const savedDiagnosticImages = normalizeStringArray(note?.diagnosticImages);
     const fallbackImage =
@@ -478,6 +725,7 @@ const SoapNoteModal = ({
         loadSoapNoteHistory();
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, patient?.id, session?.user?.role, status]);
 
   useEffect(() => {
@@ -560,6 +808,7 @@ const SoapNoteModal = ({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, patient?.id, session?.user?.role, status, storageKey]);
 
   useEffect(() => {
@@ -603,12 +852,13 @@ const SoapNoteModal = ({
     anatomy: string;
     notes: string;
   }) => {
-    console.log("🔵 handleSaveFinding called with:", data);
-    console.log("🔵 patient.id:", patient.id);
     try {
       if (!patient.id || patient.id === "temp") {
-        console.warn("❌ Clinical finding not saved - missing patient ID", data);
-        alert("Cannot save clinical finding: Patient ID is missing. Please ensure the patient has a valid ID.");
+        showToast(
+          "warning",
+          "Cannot save clinical finding",
+          "Patient ID is missing. Please ensure the patient has a valid ID."
+        );
         return;
       }
       const payload = {
@@ -617,27 +867,26 @@ const SoapNoteModal = ({
         diagnosis: data.diagnosis,
         impression: data.notes,
       };
-      console.log("📤 Sending payload to API:", payload);
       const res = await fetch("/api/clinical-findings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      console.log("📥 API Response status:", res.status);
       if (!res.ok) {
         const err = await safeJson(res);
-        console.error("❌ Failed to save clinical finding:", err?.error || res.statusText);
-        alert(`Failed to save clinical finding: ${err?.error || "Unknown error"}`);
+        showToast(
+          "error",
+          "Failed to save clinical finding",
+          err?.error || "Unknown error"
+        );
         return;
       }
-      const result = await res.json();
-      console.log("✅ Clinical finding saved successfully:", result);
-      alert("✅ Clinical finding saved successfully!");
+      showToast("success", "Clinical finding saved", `${data.diagnosis} (${data.anatomy})`);
       const newEntry = `${data.diagnosis} (${data.anatomy}) – ${data.notes}`;
       setDiagnosis((prev) => (prev ? `${prev}; ${newEntry}` : newEntry));
     } catch (error) {
       console.error("🔥 Error saving clinical finding:", error);
-      alert("Network error - please check connection and try again");
+      showToast("error", "Network error", "Please check connection and try again.");
     }
   };
 
@@ -658,20 +907,34 @@ const SoapNoteModal = ({
     setOpenPrescription(true);
   };
 
-  const handleDelete = (idx: number) => {
-    if (confirm("Delete this prescription?")) {
-      setPrescriptions((prev: Prescription[]) =>
-        prev.filter((_: Prescription, i: number) => i !== idx)
-      );
-    }
+  const handleDelete = async (idx: number) => {
+    const rx = prescriptions[idx];
+    const confirmed = await showConfirm({
+      title: "Delete prescription?",
+      message: `Are you sure you want to remove "${getPrescriptionTitle(rx)}" from this note?`,
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!confirmed) return;
+    setPrescriptions((prev: Prescription[]) =>
+      prev.filter((_: Prescription, i: number) => i !== idx)
+    );
+    showToast("success", "Prescription removed");
   };
 
-  const handleRemoveMaterial = (idx: number) => {
-    if (confirm("Remove this educational material?")) {
-      setSelectedMaterials((prev: EducationalMaterial[]) =>
-        prev.filter((_: EducationalMaterial, i: number) => i !== idx)
-      );
-    }
+  const handleRemoveMaterial = async (idx: number) => {
+    const material = selectedMaterials[idx];
+    const confirmed = await showConfirm({
+      title: "Remove material?",
+      message: `Are you sure you want to remove "${material?.title || "this material"}" from this note?`,
+      confirmLabel: "Remove",
+      variant: "danger",
+    });
+    if (!confirmed) return;
+    setSelectedMaterials((prev: EducationalMaterial[]) =>
+      prev.filter((_: EducationalMaterial, i: number) => i !== idx)
+    );
+    showToast("success", "Material removed");
   };
 
   const handleSaveNote = async () => {
@@ -708,7 +971,7 @@ const SoapNoteModal = ({
       if (userRole !== "ADMIN" && userRole !== "DOCTOR") {
         const roleError = "Unauthorized role for SOAP note saving";
         setError(roleError);
-        alert(roleError);
+        showToast("error", "Unauthorized", roleError);
         return;
       }
       const apiPath =
@@ -726,10 +989,10 @@ const SoapNoteModal = ({
         const data = await safeJson(response);
         const errorMessage = data?.error || `HTTP ${response.status}: ${response.statusText}`;
         setError(errorMessage);
-        alert(`Failed to save SOAP Note: ${errorMessage}`);
+        showToast("error", "Failed to save SOAP Note", errorMessage);
         return;
       }
-      alert("SOAP Note saved successfully!");
+      showToast("success", "SOAP Note saved", `Patient: ${patient.name}`);
       if (typeof window !== "undefined") {
         localStorage.removeItem(storageKey);
         window.dispatchEvent(
@@ -744,7 +1007,7 @@ const SoapNoteModal = ({
     } catch (error: any) {
       console.error("[SOAP-SAVE-CATCH]", error);
       setError(`Network error: ${error?.message || "Unknown error"}`);
-      alert("Network error - please check connection and try again");
+      showToast("error", "Network error", "Please check connection and try again.");
     }
   };
 
@@ -759,13 +1022,11 @@ const SoapNoteModal = ({
       if (!diagnosis.trim()) {
         setDiagnosis("Diagnostic findings");
       }
-      console.log(
-        `✅ Diagnostic image saved. Original size: ${Math.round(diagnostic.imageData.length / 1024)}KB, ` +
-        `Compressed: ${Math.round(compressedData.length / 1024)}KB`
-      );
+      showToast("success", "Diagnostic image saved", "The image was added to the assessment.");
     } catch (error) {
       console.error("Failed to compress diagnostic image:", error);
       setDiagnostics((prev: Diagnostic[]) => [...prev, diagnostic]);
+      showToast("warning", "Image added (uncompressed)", "Could not compress the image.");
     }
   };
 
@@ -780,13 +1041,18 @@ const SoapNoteModal = ({
   const handleExportPDF = async () => {
     const modalEl = document.getElementById("soap-modal-content");
     if (!modalEl) return;
-    const canvas = await html2canvas(modalEl, { scale: 2 });
-    const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pdfWidth = 210;
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-    pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-    pdf.save(`SOAP_Report_${patient.name}.pdf`);
+    try {
+      const canvas = await html2canvas(modalEl, { scale: 2 });
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pdfWidth = 210;
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`SOAP_Report_${patient.name}.pdf`);
+      showToast("success", "PDF exported", `SOAP_Report_${patient.name}.pdf`);
+    } catch (error) {
+      showToast("error", "PDF export failed", "Please try again.");
+    }
   };
 
   const handleRoomSelect = (room: RoomType) => {
@@ -829,6 +1095,7 @@ const SoapNoteModal = ({
       upsertLine(prev, nextPlanLine, isPlanScheduleLine)
     );
     setOpenRoomModal(false);
+    showToast("success", "Follow-up scheduled", summary);
   };
 
   const selectedRoomLabel = scheduledProcedure?.room
@@ -1472,8 +1739,6 @@ const SoapNoteModal = ({
           onClose={() => setOpen3DModal(false)}
           patientId={patient.id || "temp"}
           onSaveFinding={(data) => {
-            console.log("📝 onSaveFinding called from HeadTemplateModal with:", data);
-            console.log("🔑 patient.id:", patient.id);
             handleSaveFinding(data);
           }}
           onExport={handleExportPDF}
@@ -1486,6 +1751,7 @@ const SoapNoteModal = ({
         onAttach={(materials) => {
           setSelectedMaterials(materials);
           setOpenEducationalMaterial(false);
+          showToast("success", "Materials attached", `${materials.length} material(s) added to plan.`);
         }}
         selected={selectedMaterials}
       />
@@ -1500,6 +1766,6 @@ const SoapNoteModal = ({
       />
     </>
   );
-};
+}
 
 export default SoapNoteModal;
