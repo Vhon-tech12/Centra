@@ -326,11 +326,9 @@ function MedicalHistoryTemplate({
 function PrescriptionTemplate({
   patient,
   prescriptions,
-  soapNote,
 }: {
   patient: Patient;
   prescriptions: Prescription[];
-  soapNote: SoapNote | null;
 }) {
   return (
     <div className="report-content w-full rounded-[28px] border border-slate-200 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.08)] print:rounded-none print:border-none print:p-0 print:shadow-none">
@@ -352,15 +350,6 @@ function PrescriptionTemplate({
       </div>
 
       <div className="mb-5 h-px bg-slate-200" />
-
-      {/* Diagnosis */}
-      {soapNote?.diagnosis && (
-        <div className="mb-5">
-          <p className="text-sm">
-            <span className="font-semibold">Diagnosis:</span> {soapNote.diagnosis}
-          </p>
-        </div>
-      )}
 
       {/* Prescription Content */}
       <div className="flex gap-4">
@@ -826,7 +815,6 @@ export default function ReportPage() {
                     <PrescriptionTemplate
                       patient={data.patient}
                       prescriptions={data.prescriptions}
-                      soapNote={data.latestSoapNote}
                     />
                   )}
                   {template === "medcert" && (
