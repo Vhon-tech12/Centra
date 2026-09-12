@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback, createContext, useContext } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { ActionChips } from "./UIHelpers";
 import PrescriptionModal, { Prescription } from "./PrescriptionModal";
@@ -10,26 +10,16 @@ import { EducationalMaterial } from "@/types/EducationalMaterial";
 import html2canvas from "html2canvas";
 import ClinicalRoom from "./ClinicalRoom";
 import jsPDF from "jspdf";
-import {
-  XMarkIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  ExclamationTriangleIcon,
-  InformationCircleIcon,
-} from "@heroicons/react/24/outline";
 
 // ============================================================
-// FEEDBACK SYSTEM (Toast + Confirm)
+// GLOBAL FEEDBACK SYSTEM (Pure DOM — React-independent)
 // ============================================================
+// This implementation renders toasts and confirm dialogs directly
+// to document.body via DOM APIs. Because they aren't part of the
+// React tree, they persist even after the modal that triggered them
+// unmounts. No app-level Provider is needed.
 
 type ToastType = "success" | "error" | "warning" | "info";
-
-interface Toast {
-  id: string;
-  type: ToastType;
-  title: string;
-  message?: string;
-}
 
 interface ConfirmOptions {
   title: string;
@@ -39,179 +29,214 @@ interface ConfirmOptions {
   variant?: "danger" | "default";
 }
 
+const TOAST_COLORS: Record<ToastType, { accent: string; bg: string; icon: string }> = {
+  success: { accent: "#10b981", bg: "#d1fae5", icon: "✓" },
+  error: { accent: "#ef4444", bg: "#fee2e2", icon: "✕" },
+  warning: { accent: "#f59e0b", bg: "#fef3c7", icon: "!" },
+  info: { accent: "#06b6d4", bg: "#cffafe", icon: "i" },
+};
+
+function ensureToastKeyframes() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById("__global_toast_keyframes")) return;
+  const style = document.createElement("style");
+  style.id = "__global_toast_keyframes";
+  style.textContent = `
+    @keyframes __toastSlideIn {
+      from { opacity: 0; transform: translateX(20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes __toastSlideOut {
+      from { opacity: 1; transform: translateX(0); }
+      to   { opacity: 0; transform: translateX(20px); }
+    }
+    @keyframes __modalFadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureToastContainer(): HTMLDivElement | null {
+  if (typeof document === "undefined") return null;
+  let container = document.getElementById("__global_toast_container") as HTMLDivElement | null;
+  if (!container || !document.body.contains(container)) {
+    container = document.createElement("div");
+    container.id = "__global_toast_container";
+    container.style.cssText = [
+      "position:fixed",
+      "top:1rem",
+      "right:1rem",
+      "z-index:2147483647",
+      "display:flex",
+      "flex-direction:column",
+      "gap:0.75rem",
+      "pointer-events:none",
+      "font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",
+    ].join(";");
+    document.body.appendChild(container);
+  }
+  return container;
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function showGlobalToast(type: ToastType, title: string, message?: string) {
+  if (typeof document === "undefined") return;
+  ensureToastKeyframes();
+  const container = ensureToastContainer();
+  if (!container) return;
+
+  const colors = TOAST_COLORS[type];
+
+  const el = document.createElement("div");
+  el.style.cssText = [
+    "pointer-events:auto",
+    "width:20rem",
+    "background:#ffffff",
+    `border:1px solid ${colors.accent}33`,
+    "border-radius:1rem",
+    "box-shadow:0 10px 25px -5px rgba(0,0,0,0.1),0 8px 10px -6px rgba(0,0,0,0.05)",
+    "padding:1rem",
+    "display:flex",
+    "align-items:flex-start",
+    "gap:0.75rem",
+    "animation:__toastSlideIn 0.25s ease-out",
+  ].join(";");
+
+  el.innerHTML = `
+    <div style="width:2.25rem;height:2.25rem;border-radius:9999px;background:${colors.bg};color:${colors.accent};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;font-size:1rem;">
+      ${colors.icon}
+    </div>
+    <div style="flex:1;min-width:0;">
+      <p style="font-size:0.875rem;font-weight:600;color:#1f2937;margin:0;line-height:1.25;">${escapeHtml(title)}</p>
+      ${message ? `<p style="font-size:0.75rem;color:#6b7280;margin:0.25rem 0 0;line-height:1.4;word-break:break-word;">${escapeHtml(message)}</p>` : ""}
+    </div>
+    <button type="button" data-dismiss style="padding:0.25rem;color:#d1d5db;background:none;border:none;cursor:pointer;flex-shrink:0;line-height:1;font-size:1.25rem;font-family:inherit;">
+      ×
+    </button>
+  `;
+
+  const dismissBtn = el.querySelector("[data-dismiss]") as HTMLButtonElement | null;
+  const remove = () => {
+    el.style.animation = "__toastSlideOut 0.25s ease-in forwards";
+    setTimeout(() => el.remove(), 260);
+  };
+  if (dismissBtn) dismissBtn.addEventListener("click", remove);
+
+  container.appendChild(el);
+
+  setTimeout(remove, 4000);
+}
+
+function showGlobalConfirm(options: ConfirmOptions): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    if (typeof document === "undefined") {
+      resolve(false);
+      return;
+    }
+    ensureToastKeyframes();
+
+    const isDanger = options.variant === "danger";
+    const accent = isDanger ? "#dc2626" : "#0891b2";
+    const iconBg = isDanger ? "#fee2e2" : "#cffafe";
+    const iconColor = isDanger ? "#dc2626" : "#0891b2";
+    const iconText = isDanger ? "!" : "i";
+
+    const overlay = document.createElement("div");
+    overlay.style.cssText = [
+      "position:fixed",
+      "inset:0",
+      "z-index:2147483646",
+      "display:flex",
+      "align-items:center",
+      "justify-content:center",
+      "background:rgba(0,0,0,0.4)",
+      "-webkit-backdrop-filter:blur(4px)",
+      "backdrop-filter:blur(4px)",
+      "padding:1rem",
+      "animation:__modalFadeIn 0.15s ease-out",
+      "font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif",
+    ].join(";");
+
+    const dialog = document.createElement("div");
+    dialog.style.cssText = [
+      "background:#ffffff",
+      "width:100%",
+      "max-width:28rem",
+      "border-radius:1.5rem",
+      "box-shadow:0 25px 50px -12px rgba(0,0,0,0.25)",
+      "overflow:hidden",
+    ].join(";");
+
+    dialog.innerHTML = `
+      <div style="padding:1.5rem;">
+        <div style="display:flex;align-items:flex-start;gap:1rem;">
+          <div style="width:3rem;height:3rem;border-radius:9999px;background:${iconBg};color:${iconColor};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700;font-size:1.25rem;">
+            ${iconText}
+          </div>
+          <div style="flex:1;min-width:0;">
+            <h3 style="font-size:1.125rem;font-weight:700;color:#1f2937;margin:0;line-height:1.3;">${escapeHtml(options.title)}</h3>
+            <p style="font-size:0.875rem;color:#6b7280;margin:0.375rem 0 0;line-height:1.5;">${escapeHtml(options.message)}</p>
+          </div>
+        </div>
+      </div>
+      <div style="background:#f9fafb;padding:1rem 1.5rem;display:flex;justify-content:flex-end;gap:0.75rem;">
+        <button type="button" data-action="cancel" style="padding:0.625rem 1.25rem;font-size:0.875rem;font-weight:500;color:#4b5563;background:none;border:none;border-radius:0.75rem;cursor:pointer;font-family:inherit;">
+          ${escapeHtml(options.cancelLabel || "Cancel")}
+        </button>
+        <button type="button" data-action="confirm" style="padding:0.625rem 1.25rem;font-size:0.875rem;font-weight:600;color:#ffffff;background:${accent};border:none;border-radius:0.75rem;cursor:pointer;font-family:inherit;box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          ${escapeHtml(options.confirmLabel || "Confirm")}
+        </button>
+      </div>
+    `;
+
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    let resolved = false;
+    const cleanup = (result: boolean) => {
+      if (resolved) return;
+      resolved = true;
+      overlay.remove();
+      document.removeEventListener("keydown", keyHandler);
+      resolve(result);
+    };
+
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") cleanup(false);
+      if (e.key === "Enter") cleanup(true);
+    };
+    document.addEventListener("keydown", keyHandler);
+
+    const cancelBtn = dialog.querySelector("[data-action='cancel']") as HTMLButtonElement | null;
+    const confirmBtn = dialog.querySelector("[data-action='confirm']") as HTMLButtonElement | null;
+    if (cancelBtn) cancelBtn.addEventListener("click", () => cleanup(false));
+    if (confirmBtn) confirmBtn.addEventListener("click", () => cleanup(true));
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) cleanup(false);
+    });
+  });
+}
+
 interface FeedbackContextValue {
   showToast: (type: ToastType, title: string, message?: string) => void;
   showConfirm: (options: ConfirmOptions) => Promise<boolean>;
 }
 
-const FeedbackContext = createContext<FeedbackContextValue | null>(null);
-
-function useFeedback() {
-  const ctx = useContext(FeedbackContext);
-  if (!ctx) throw new Error("useFeedback must be used within FeedbackProvider");
-  return ctx;
-}
-
-function FeedbackProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const [confirmState, setConfirmState] = useState<{
-    options: ConfirmOptions;
-    resolve: (value: boolean) => void;
-  } | null>(null);
-
-  const showToast = useCallback((type: ToastType, title: string, message?: string) => {
-    const id = Math.random().toString(36).slice(2);
-    setToasts((prev) => [...prev, { id, type, title, message }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
-  }, []);
-
-  const dismissToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+function useFeedback(): FeedbackContextValue {
+  return {
+    showToast: showGlobalToast,
+    showConfirm: showGlobalConfirm,
   };
-
-  const showConfirm = useCallback((options: ConfirmOptions) => {
-    return new Promise<boolean>((resolve) => {
-      setConfirmState({ options, resolve });
-    });
-  }, []);
-
-  const handleConfirmClose = (result: boolean) => {
-    if (confirmState) {
-      confirmState.resolve(result);
-      setConfirmState(null);
-    }
-  };
-
-  return (
-    <FeedbackContext.Provider value={{ showToast, showConfirm }}>
-      {children}
-
-      {/* Toast stack */}
-      <div className="fixed top-4 right-4 z-[200] flex flex-col gap-3 pointer-events-none">
-        {toasts.map((toast) => (
-          <ToastItem key={toast.id} toast={toast} onDismiss={() => dismissToast(toast.id)} />
-        ))}
-      </div>
-
-      {/* Confirm dialog */}
-      {confirmState && (
-        <ConfirmDialog options={confirmState.options} onResolve={handleConfirmClose} />
-      )}
-    </FeedbackContext.Provider>
-  );
-}
-
-function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
-  const styles: Record<ToastType, { border: string; iconBg: string; icon: React.ReactNode }> = {
-    success: {
-      border: "border-emerald-200",
-      iconBg: "bg-emerald-100 text-emerald-600",
-      icon: <CheckCircleIcon className="w-5 h-5" />,
-    },
-    error: {
-      border: "border-red-200",
-      iconBg: "bg-red-100 text-red-600",
-      icon: <XCircleIcon className="w-5 h-5" />,
-    },
-    warning: {
-      border: "border-amber-200",
-      iconBg: "bg-amber-100 text-amber-600",
-      icon: <ExclamationTriangleIcon className="w-5 h-5" />,
-    },
-    info: {
-      border: "border-cyan-200",
-      iconBg: "bg-cyan-100 text-cyan-600",
-      icon: <InformationCircleIcon className="w-5 h-5" />,
-    },
-  };
-
-  const s = styles[toast.type];
-
-  return (
-    <div
-      className={`pointer-events-auto w-80 bg-white border ${s.border} rounded-2xl shadow-lg shadow-black/5 p-4 flex items-start gap-3`}
-      style={{ animation: "slideIn 0.25s ease-out" }}
-    >
-      <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${s.iconBg}`}>
-        {s.icon}
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-gray-800">{toast.title}</p>
-        {toast.message && <p className="text-xs text-gray-500 mt-0.5 break-words">{toast.message}</p>}
-      </div>
-      <button
-        onClick={onDismiss}
-        className="p-1 text-gray-300 hover:text-gray-500 rounded-lg transition flex-shrink-0"
-      >
-        <XMarkIcon className="w-4 h-4" />
-      </button>
-    </div>
-  );
-}
-
-function ConfirmDialog({
-  options,
-  onResolve,
-}: {
-  options: ConfirmOptions;
-  onResolve: (result: boolean) => void;
-}) {
-  const isDanger = options.variant === "danger";
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onResolve(false);
-      if (e.key === "Enter") onResolve(true);
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [onResolve]);
-
-  return (
-    <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
-        <div className="p-6">
-          <div className="flex items-start gap-4">
-            <div
-              className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
-                isDanger ? "bg-red-100 text-red-600" : "bg-cyan-100 text-cyan-600"
-              }`}
-            >
-              {isDanger ? (
-                <ExclamationTriangleIcon className="w-6 h-6" />
-              ) : (
-                <InformationCircleIcon className="w-6 h-6" />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-lg font-bold text-gray-800">{options.title}</h3>
-              <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">{options.message}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3">
-          <button
-            onClick={() => onResolve(false)}
-            className="px-5 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-200 rounded-xl transition"
-          >
-            {options.cancelLabel || "Cancel"}
-          </button>
-          <button
-            onClick={() => onResolve(true)}
-            className={`px-5 py-2.5 text-sm font-semibold text-white rounded-xl transition shadow-sm ${
-              isDanger
-                ? "bg-red-600 hover:bg-red-700 shadow-red-600/20"
-                : "bg-cyan-600 hover:bg-cyan-700 shadow-cyan-600/20"
-            }`}
-          >
-            {options.confirmLabel || "Confirm"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ============================================================
@@ -530,7 +555,7 @@ async function safeJson(res: Response) {
 }
 
 // ============================================================
-// SOAP NOTE MODAL (WRAPPED WITH FEEDBACK PROVIDER)
+// SOAP NOTE MODAL
 // ============================================================
 
 const SoapNoteModal = ({
@@ -544,41 +569,6 @@ const SoapNoteModal = ({
   patient: Patient | null;
   onSaved?: () => void;
 }) => {
-  return (
-    <FeedbackProvider>
-      <style jsx global>{`
-        @keyframes slideIn {
-          from {
-            opacity: 0;
-            transform: translateX(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(0);
-          }
-        }
-      `}</style>
-      <SoapNoteModalInner
-        open={open}
-        onClose={onClose}
-        patient={patient}
-        onSaved={onSaved}
-      />
-    </FeedbackProvider>
-  );
-};
-
-function SoapNoteModalInner({
-  open,
-  onClose,
-  patient,
-  onSaved,
-}: {
-  open: boolean;
-  onClose: () => void;
-  patient: Patient | null;
-  onSaved?: () => void;
-}) {
   const { data: session, status } = useSession();
   const { showToast, showConfirm } = useFeedback();
 
@@ -885,7 +875,7 @@ function SoapNoteModalInner({
       const newEntry = `${data.diagnosis} (${data.anatomy}) – ${data.notes}`;
       setDiagnosis((prev) => (prev ? `${prev}; ${newEntry}` : newEntry));
     } catch (error) {
-      console.error("🔥 Error saving clinical finding:", error);
+      console.error("Error saving clinical finding:", error);
       showToast("error", "Network error", "Please check connection and try again.");
     }
   };
@@ -985,6 +975,8 @@ function SoapNoteModalInner({
         },
         body: JSON.stringify(payload),
       });
+
+      // ─── ERROR CASE ───
       if (!response.ok) {
         const data = await safeJson(response);
         const errorMessage = data?.error || `HTTP ${response.status}: ${response.statusText}`;
@@ -992,7 +984,9 @@ function SoapNoteModalInner({
         showToast("error", "Failed to save SOAP Note", errorMessage);
         return;
       }
-      showToast("success", "SOAP Note saved", `Patient: ${patient.name}`);
+
+      // ─── SUCCESS CASE ───
+      // Cleanup
       if (typeof window !== "undefined") {
         localStorage.removeItem(storageKey);
         window.dispatchEvent(
@@ -1001,9 +995,21 @@ function SoapNoteModalInner({
           })
         );
       }
+
+      // Refresh history
       await loadSoapNoteHistory();
+
+      // Close modal
       onSaved?.();
       onClose();
+
+      // Show toast after modal closes.
+      // Because the toast system is DOM-based (rendered directly to
+      // document.body), this will be visible even though the modal
+      // is no longer mounted.
+      setTimeout(() => {
+        showToast("success", "SOAP Note saved", `Patient: ${patient.name}`);
+      }, 300);
     } catch (error: any) {
       console.error("[SOAP-SAVE-CATCH]", error);
       setError(`Network error: ${error?.message || "Unknown error"}`);
@@ -1766,6 +1772,6 @@ function SoapNoteModalInner({
       />
     </>
   );
-}
+};
 
 export default SoapNoteModal;
