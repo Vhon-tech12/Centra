@@ -123,9 +123,16 @@ function PatientInfoTemplate({ patient }: { patient: Patient }) {
     <div className="report-content mx-auto w-full max-w-[860px] rounded-[28px] border border-slate-200 bg-white p-8 shadow-[0_20px_60px_rgba(15,23,42,0.08)] print:mx-0 print:max-w-full print:rounded-none print:border-none print:p-0 print:shadow-none">
       <div className="mb-6 flex items-start justify-between gap-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full border border-slate-300 bg-slate-50 text-xs font-semibold text-slate-500">
-            LOGO
-          </div>
+          {/* 
+            DITO NAKALAGAY ANG LOGO. 
+            Palitan ang src="/centra-logo.png" ng tamang path ng iyong logo.
+            Siguraduhing nasa public folder ang image.
+          */}
+          <img
+            src="/centraLogo.jpg" 
+            alt="Centra Clinic Logo"
+            className="h-14 w-14 rounded-full border border-slate-300 bg-white object-contain p-1"
+          />
           <div>
             <p className="font-bold tracking-wide text-slate-900">CENTRA</p>
             <p className="text-[11px] text-slate-600">ENT & Aesthetic Clinic</p>
