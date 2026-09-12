@@ -503,14 +503,8 @@ export default function AnalyticsPage() {
     }
   }, [mounted, refreshAnalytics]);
 
-  // ─── PRINT FUNCTION ───
+  // ─── PRINT FUNCTION (UPDATED) ───
   const handlePrint = useCallback(() => {
-    const printWindow = window.open('', '_blank', 'width=1200,height=900');
-    if (!printWindow) {
-      alert('Please allow popups for this site to print.');
-      return;
-    }
-
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-US', {
       weekday: 'long',
@@ -577,85 +571,155 @@ export default function AnalyticsPage() {
     const uniquePatients = new Set(todayAppointments.map((item) => item.fullName)).size;
     const cancellationRate = businessInsights?.cancellationRate || 0;
 
-    // ─── BUILD HTML ───
+    // ─── BUILD HTML (FORMAL FORMAT) ───
     let html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Centra Clinic - Analytics Report</title>
+  <title> </title>
   <style>
+    /* Standard Margins */
+    @page { margin: 15mm; }
+    
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:'Segoe UI',Arial,sans-serif; padding:30px; background:#f1f5f9; color:#0f172a; }
-    .container { max-width:1100px; margin:0 auto; background:white; border-radius:16px; padding:35px; box-shadow:0 4px 24px rgba(0,0,0,0.06); }
-    .header { text-align:center; border-bottom:2px solid #e2e8f0; padding-bottom:20px; margin-bottom:28px; }
-    .header .clinic { color:#6366f1; font-weight:700; font-size:14px; letter-spacing:1px; }
-    .header h1 { font-size:24px; font-weight:700; margin:4px 0; }
-    .header p { color:#64748b; font-size:13px; }
-    .grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:28px; }
-    .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
-    .grid-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:20px; }
-    .grid-4-cards { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
-    .card { border:1px solid #e2e8f0; border-radius:12px; padding:14px 18px; background:#f8fafc; }
-    .card .lbl { font-size:10px; text-transform:uppercase; font-weight:600; color:#64748b; letter-spacing:0.5px; }
-    .card .val { font-size:26px; font-weight:700; color:#0f172a; margin-top:3px; }
-    .card .sub { font-size:11px; color:#94a3b8; margin-top:2px; }
-    .section { margin-bottom:26px; }
-    .section-title { display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #e2e8f0; padding-bottom:6px; margin-bottom:10px; }
-    .section-title h2 { font-size:17px; font-weight:600; }
-    .section-title .badge { font-size:11px; background:#e2e8f0; padding:2px 12px; border-radius:20px; color:#475569; }
-    .subtitle { font-size:12px; color:#64748b; margin-bottom:10px; }
-    .chart-box { border:1px solid #e2e8f0; border-radius:12px; padding:14px 18px; background:white; }
-    .chart-box h3 { font-size:13px; font-weight:600; margin-bottom:2px; }
-    .chart-box .sub { font-size:11px; color:#94a3b8; margin-bottom:8px; }
-    .bar-container { display:flex; flex-direction:column; gap:5px; }
-    .bar-row { display:flex; align-items:center; gap:8px; }
-    .bar-label { width:100px; font-size:12px; font-weight:500; flex-shrink:0; text-align:right; }
-    .bar-track { flex:1; height:20px; background:#f1f5f9; border-radius:4px; overflow:hidden; }
-    .bar-fill { height:100%; border-radius:4px; }
-    .bar-val { font-size:12px; font-weight:600; width:32px; flex-shrink:0; }
-    .tag-wrap { display:flex; flex-wrap:wrap; gap:6px; padding:4px 0; }
-    .tag { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:16px; font-size:12px; font-weight:500; border:1px solid #e2e8f0; background:#f8fafc; }
-    .tag-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
-    .tag-pct { color:#64748b; font-weight:400; font-size:11px; }
-    .findings-list { font-size:12px; margin-top:4px; }
-    .findings-row { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid #f1f5f9; }
-    .findings-row:last-child { border-bottom:none; }
-    .findings-row .cnt { font-weight:600; }
-    .footer { margin-top:28px; padding-top:14px; border-top:1px solid #e2e8f0; text-align:center; font-size:11px; color:#94a3b8; }
-    @media print { body { padding:10px; background:white; } .container { box-shadow:none; padding:15px; } }
-    @media (max-width:768px) { .grid-4{grid-template-columns:1fr 1fr;} .grid-2{grid-template-columns:1fr;} .grid-3{grid-template-columns:1fr;} .grid-4-cards{grid-template-columns:1fr 1fr;} .bar-label{width:70px;font-size:11px;} }
+    body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #000; font-size: 12px; line-height: 1.4; padding: 0; }
+    .container { width: 100%; max-width: 1000px; margin: 0 auto; }
+    
+    /* Improved Header Layout */
+    .report-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #000; padding-bottom: 15px; margin-bottom: 25px; page-break-inside: avoid; }
+    .header-left { display: flex; align-items: center; gap: 15px; }
+    
+    /* LOGO STYLE */
+    .logo-img { width: 60px; height: 60px; object-fit: contain; border-radius: 50%; border: 1px solid #000; }
+    
+    .clinic-info h1 { font-size: 20px; margin: 0 0 2px 0; text-transform: uppercase; letter-spacing: 1px; }
+    .clinic-info p { font-size: 12px; color: #333; margin: 0; }
+    .header-right { text-align: right; font-size: 11px; }
+    .header-right p { margin: 2px 0; }
+    
+    /* Summary Boxes */
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 25px; page-break-inside: avoid; }
+    .summary-box { border: 1px solid #000; padding: 10px; text-align: center; }
+    .summary-box .label { font-size: 10px; text-transform: uppercase; font-weight: bold; }
+    .summary-box .value { font-size: 18px; font-weight: bold; margin-top: 5px; }
+    .summary-box .sub { font-size: 10px; color: #555; }
+    
+    /* Sections */
+    .section { margin-bottom: 25px; page-break-inside: auto; }
+    .section-title { font-size: 12px; font-weight: bold; text-transform: uppercase; border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 10px; page-break-after: avoid; }
+    
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; margin-bottom: 15px; page-break-inside: auto; }
+    th, td { border: 1px solid #000; padding: 6px 8px; text-align: left; font-size: 11px; }
+    th { background-color: #f0f0f0; font-weight: bold; text-transform: uppercase; page-break-after: avoid; }
+    tr { page-break-inside: avoid; page-break-after: auto; }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    
+    /* Footer */
+    .report-footer { margin-top: 50px; border-top: 1px solid #000; padding-top: 15px; font-size: 10px; width: 100%; page-break-inside: avoid; }
+    .footer-table { width: 100%; border: none; margin: 0; padding: 0; }
+    .footer-table td { border: none; padding: 0; vertical-align: bottom; }
+    .signature-box { border-top: 1px solid #000; width: 200px; text-align: center; padding-top: 5px; font-weight: bold; margin-left: auto; }
   </style>
 </head>
 <body>
 <div class="container">
-  <div class="header">
-    <div class="clinic">🏥 CENTRA CLINIC</div>
-    <h1>Analytics Report</h1>
-    <p>Generated: ${dateStr} at ${timeStr}</p>
+  <div class="report-header">
+    <div class="header-left">
+      <!-- LOGO -->
+      <img src="/centraLogo.jpg" alt="Centra Clinic Logo" class="logo-img" />
+      
+      <div class="clinic-info">
+        <h1>CENTRA CLINIC</h1>
+        <p>Analytics and Operations Report</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <p><strong>Generated on:</strong> ${dateStr} at ${timeStr}</p>
+      <p><strong>Report Period:</strong> ${businessInsights?.currentMonthLabel || 'Current'}</p>
+    </div>
   </div>
 
-  <div class="grid-4-cards">
-    <div class="card"><div class="lbl">Total Bookings</div><div class="val">${totalBookings}</div><div class="sub">${businessInsights?.bookingGrowthPercentage||0}% vs last month</div></div>
-    <div class="card"><div class="lbl">Patients Today</div><div class="val">${uniquePatients}</div></div>
-    <div class="card"><div class="lbl">Consultations</div><div class="val">${totalConsultations}</div></div>
-    <div class="card"><div class="lbl">Cancellation Rate</div><div class="val">${cancellationRate}%</div></div>
+  <div class="summary-grid">
+    <div class="summary-box">
+      <div class="label">Total Bookings</div>
+      <div class="value">${totalBookings}</div>
+      <div class="sub">${businessInsights?.bookingGrowthPercentage || 0}% vs last month</div>
+    </div>
+    <div class="summary-box">
+      <div class="label">Patients Today</div>
+      <div class="value">${uniquePatients}</div>
+    </div>
+    <div class="summary-box">
+      <div class="label">Consultations</div>
+      <div class="value">${totalConsultations}</div>
+    </div>
+    <div class="summary-box">
+      <div class="label">Cancellation Rate</div>
+      <div class="value">${cancellationRate}%</div>
+    </div>
   </div>`;
+
+    // ─── PATIENT DEMOGRAPHICS ───
+    if (ageDistribution && genderDistribution) {
+      const pediatricCount = ageDistribution.ageGroups.find(g => g.group === "0-12")?.count || 0;
+      const adultCount = (ageDistribution.ageGroups.find(g => g.group === "13-19")?.count || 0) + 
+                         (ageDistribution.ageGroups.find(g => g.group === "20-59")?.count || 0);
+      const geriatricCount = ageDistribution.ageGroups.find(g => g.group === "60+")?.count || 0;
+      const totalAge = pediatricCount + adultCount + geriatricCount;
+      
+      const totalGender = genderDistribution.genderData.reduce((s, g) => s + g.count, 0);
+
+      const groupedAges = [
+        { group: "Pediatric (0-12)", count: pediatricCount, desc: "Infants, children & young teens" },
+        { group: "Adult (13-59)", count: adultCount, desc: "Teenagers, adults & middle-aged" },
+        { group: "Geriatric (60+)", count: geriatricCount, desc: "Senior citizens" },
+      ];
+
+      html += `
+  <div class="section">
+    <div class="section-title">Patient Demographics</div>
+    <div style="display: flex; gap: 20px; margin-bottom: 15px;">
+      <div style="flex: 1;">
+        <p style="font-weight:bold; margin-bottom:5px; font-size:11px;">Age Distribution (Avg Age: ${ageDistribution.avgAge})</p>
+        <table>
+          <thead><tr><th>Age Group</th><th>Description</th><th class="text-right">Count</th><th class="text-right">Percentage</th></tr></thead>
+          <tbody>`;
+      groupedAges.forEach((group) => {
+        const pct = totalAge > 0 ? ((group.count / totalAge) * 100).toFixed(1) : 0;
+        html += `<tr><td>${group.group}</td><td>${group.desc}</td><td class="text-right">${group.count}</td><td class="text-right">${pct}%</td></tr>`;
+      });
+      html += `</tbody></table></div>
+      <div style="flex: 1;">
+        <p style="font-weight:bold; margin-bottom:5px; font-size:11px;">Gender Distribution</p>
+        <table>
+          <thead><tr><th>Gender</th><th>Description</th><th class="text-right">Count</th><th class="text-right">Percentage</th></tr></thead>
+          <tbody>`;
+      genderDistribution.genderData.forEach((gender) => {
+        const pct = totalGender > 0 ? ((gender.count / totalGender) * 100).toFixed(1) : 0;
+        const genderDesc = gender.name === 'Male' ? 'Male patients' : gender.name === 'Female' ? 'Female patients' : 'Other/Unspecified';
+        html += `<tr><td>${gender.name}</td><td>${genderDesc}</td><td class="text-right">${gender.count}</td><td class="text-right">${pct}%</td></tr>`;
+      });
+      html += `</tbody></table></div>
+    </div>
+  </div>`;
+    }
 
     // ─── CONSULTATION ───
     if (uniqueConsultation.length > 0) {
       const total = uniqueConsultation.reduce((s, i) => s + i.value, 0);
       html += `
   <div class="section">
-    <div class="section-title"><h2>Consultation Service Distribution</h2><span class="badge">${uniqueConsultation.length} services</span></div>
-    <div class="subtitle">Service mix breakdown</div>
-    <div class="chart-box">
-      <div class="tag-wrap">`;
-      uniqueConsultation.forEach((item, i) => {
+    <div class="section-title">Consultation Service Distribution</div>
+    <table>
+      <thead><tr><th>Service Name</th><th class="text-right">Count</th><th class="text-right">Percentage</th></tr></thead>
+      <tbody>`;
+      uniqueConsultation.forEach((item) => {
         const pct = total > 0 ? ((item.value / total) * 100).toFixed(1) : 0;
-        const color = COLOR_SCHEMES[(i + 3) % COLOR_SCHEMES.length].fill;
-        html += `<span class="tag"><span class="tag-dot" style="background:${color}"></span>${item.name} <span class="tag-pct">(${pct}%)</span></span>`;
+        html += `<tr><td>${item.name}</td><td class="text-right">${item.value}</td><td class="text-right">${pct}%</td></tr>`;
       });
-      html += `</div></div></div>`;
+      html += `</tbody></table></div>`;
     }
 
     // ─── STATUS ───
@@ -663,217 +727,197 @@ export default function AnalyticsPage() {
       const total = groupedStatus.reduce((s, i) => s + i.count, 0);
       html += `
   <div class="section">
-    <div class="section-title"><h2>Appointment Status Breakdown</h2><span class="badge">${groupedStatus.length} statuses</span></div>
-    <div class="subtitle">Current status distribution</div>
-    <div class="chart-box">
-      <div class="tag-wrap">`;
-      groupedStatus.forEach((item, i) => {
+    <div class="section-title">Appointment Status Breakdown</div>
+    <table>
+      <thead><tr><th>Status</th><th class="text-right">Count</th><th class="text-right">Percentage</th></tr></thead>
+      <tbody>`;
+      groupedStatus.forEach((item) => {
         const pct = total > 0 ? ((item.count / total) * 100).toFixed(1) : 0;
-        const color = COLOR_SCHEMES[(i + 5) % COLOR_SCHEMES.length].fill;
-        html += `<span class="tag"><span class="tag-dot" style="background:${color}"></span>${item.status} <span class="tag-pct">(${pct}%)</span></span>`;
+        html += `<tr><td>${item.status}</td><td class="text-right">${item.count}</td><td class="text-right">${pct}%</td></tr>`;
       });
-      html += `</div></div></div>`;
+      html += `</tbody></table></div>`;
     }
 
     // ─── SERVICE DEMAND ───
     if (businessInsights?.serviceStats && businessInsights.serviceStats.length > 0) {
-      const maxVal = Math.max(...businessInsights.serviceStats.map(s => s.count));
+      const total = businessInsights.serviceStats.reduce((s, i) => s + i.count, 0);
       html += `
   <div class="section">
-    <div class="section-title"><h2>Service Demand Ranking</h2><span class="badge">Most booked</span></div>
-    <div class="subtitle">Popularity of services</div>
-    <div class="chart-box">
-      <div class="bar-container">`;
+    <div class="section-title">Service Demand Ranking</div>
+    <table>
+      <thead><tr><th>Service Name</th><th class="text-right">Bookings</th><th class="text-right">Percentage</th></tr></thead>
+      <tbody>`;
       businessInsights.serviceStats.forEach((item) => {
-        const pct = maxVal > 0 ? (item.count / maxVal) * 100 : 0;
-        html += `
-        <div class="bar-row">
-          <span class="bar-label">${item.name}</span>
-          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:#8b5cf6"></div></div>
-          <span class="bar-val">${item.count}</span>
-        </div>`;
+        const pct = total > 0 ? ((item.count / total) * 100).toFixed(1) : 0;
+        html += `<tr><td>${item.name}</td><td class="text-right">${item.count}</td><td class="text-right">${pct}%</td></tr>`;
       });
-      html += `</div></div></div>`;
+      html += `</tbody></table></div>`;
     }
 
     // ─── BUSIEST DAYS ───
     if (businessInsights?.dayStats && businessInsights.dayStats.length > 0) {
-      const maxVal = Math.max(...businessInsights.dayStats.map(d => d.count));
+      const total = businessInsights.dayStats.reduce((s, i) => s + i.count, 0);
       html += `
   <div class="section">
-    <div class="section-title"><h2>Busiest Booking Days</h2><span class="badge">Weekly</span></div>
-    <div class="subtitle">Day-of-week popularity</div>
-    <div class="chart-box">
-      <div class="bar-container">`;
+    <div class="section-title">Busiest Booking Days</div>
+    <table>
+      <thead><tr><th>Day of Week</th><th class="text-right">Bookings</th><th class="text-right">Percentage</th></tr></thead>
+      <tbody>`;
       businessInsights.dayStats.forEach((item) => {
-        const pct = maxVal > 0 ? (item.count / maxVal) * 100 : 0;
-        html += `
-        <div class="bar-row">
-          <span class="bar-label">${item.day}</span>
-          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:#14b8a6"></div></div>
-          <span class="bar-val">${item.count}</span>
-        </div>`;
+        const pct = total > 0 ? ((item.count / total) * 100).toFixed(1) : 0;
+        html += `<tr><td>${item.day}</td><td class="text-right">${item.count}</td><td class="text-right">${pct}%</td></tr>`;
       });
-      html += `</div></div></div>`;
+      html += `</tbody></table></div>`;
     }
 
     // ─── PEAK HOURS ───
     if (businessInsights?.timeBlockStats && businessInsights.timeBlockStats.length > 0) {
-      const maxVal = Math.max(...businessInsights.timeBlockStats.map(t => t.count));
+      const total = businessInsights.timeBlockStats.reduce((s, i) => s + i.count, 0);
       html += `
   <div class="section">
-    <div class="section-title"><h2>Peak Booking Sessions</h2><span class="badge">Time slots</span></div>
-    <div class="subtitle">Time-of-day distribution</div>
-    <div class="chart-box">
-      <div class="bar-container">`;
+    <div class="section-title">Peak Booking Sessions</div>
+    <table>
+      <thead><tr><th>Time Block</th><th class="text-right">Bookings</th><th class="text-right">Percentage</th></tr></thead>
+      <tbody>`;
       businessInsights.timeBlockStats.forEach((item) => {
-        const pct = maxVal > 0 ? (item.count / maxVal) * 100 : 0;
-        html += `
-        <div class="bar-row">
-          <span class="bar-label" style="width:130px;font-size:11px;">${item.timeBlock}</span>
-          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:#06b6d4"></div></div>
-          <span class="bar-val">${item.count}</span>
-        </div>`;
+        const pct = total > 0 ? ((item.count / total) * 100).toFixed(1) : 0;
+        html += `<tr><td>${item.timeBlock}</td><td class="text-right">${item.count}</td><td class="text-right">${pct}%</td></tr>`;
       });
-      html += `</div></div></div>`;
+      html += `</tbody></table></div>`;
     }
 
     // ─── DOCTOR WORKLOAD ───
     if (businessInsights?.doctorWorkload && businessInsights.doctorWorkload.length > 0) {
-      const maxVal = Math.max(...businessInsights.doctorWorkload.map(d => d.count));
+      const total = businessInsights.doctorWorkload.reduce((s, i) => s + i.count, 0);
       html += `
   <div class="section">
-    <div class="section-title"><h2>Doctor Workload</h2><span class="badge">Appointments</span></div>
-    <div class="subtitle">Appointments per doctor</div>
-    <div class="chart-box">
-      <div class="bar-container">`;
+    <div class="section-title">Doctor Workload</div>
+    <table>
+      <thead><tr><th>Doctor Name</th><th class="text-right">Appointments</th><th class="text-right">Percentage</th></tr></thead>
+      <tbody>`;
       businessInsights.doctorWorkload.forEach((item) => {
-        const pct = maxVal > 0 ? (item.count / maxVal) * 100 : 0;
-        html += `
-        <div class="bar-row">
-          <span class="bar-label">${item.doctorName}</span>
-          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:#6366f1"></div></div>
-          <span class="bar-val">${item.count}</span>
-        </div>`;
+        const pct = total > 0 ? ((item.count / total) * 100).toFixed(1) : 0;
+        html += `<tr><td>${item.doctorName}</td><td class="text-right">${item.count}</td><td class="text-right">${pct}%</td></tr>`;
       });
-      html += `</div></div></div>`;
+      html += `</tbody></table></div>`;
     }
 
     // ─── CLINICAL FINDINGS ───
     if (findingsData.length > 0) {
-      const parts = ['ear','nose','throat','head'];
-      const labels = ['Ear','Nose','Throat','Head'];
-      const emojis = ['👂','👃','🗣️','🧠'];
+      const totalFindings = findingsData.reduce((s, d) => s + d.count, 0);
       html += `
   <div class="section">
-    <div class="section-title"><h2>Clinical Findings per Body Part</h2><span class="badge">${findingsData.length} findings</span></div>
-    <div class="subtitle">Distribution of diagnoses</div>
-    <div class="grid-4-cards">`;
-      parts.forEach((part, idx) => {
-        const data = findingsData.filter(f => f.anatomy.toLowerCase() === part);
-        const total = data.reduce((s, d) => s + d.count, 0);
-        html += `
-      <div class="chart-box">
-        <h3>${emojis[idx]} ${labels[idx]}</h3>
-        <div class="sub">${total} findings</div>
-        <div class="findings-list">`;
-        if (data.length > 0) {
-          data.forEach((item) => {
-            const pct = total > 0 ? ((item.count / total) * 100).toFixed(0) : 0;
-            html += `<div class="findings-row"><span>${item.diagnosis}</span><span class="cnt">${item.count} (${pct}%)</span></div>`;
-          });
-        } else {
-          html += `<span style="color:#94a3b8;font-size:12px;">No findings</span>`;
-        }
-        html += `</div></div>`;
+    <div class="section-title">Clinical Findings per Body Part</div>
+    <table>
+      <thead><tr><th>Body Part</th><th>Diagnosis</th><th class="text-right">Count</th><th class="text-right">Percentage</th></tr></thead>
+      <tbody>`;
+      findingsData.forEach((item) => {
+        const pct = totalFindings > 0 ? ((item.count / totalFindings) * 100).toFixed(1) : 0;
+        html += `<tr><td style="text-transform:capitalize;">${item.anatomy}</td><td>${item.diagnosis}</td><td class="text-right">${item.count}</td><td class="text-right">${pct}%</td></tr>`;
       });
-      html += `</div></div>`;
+      html += `</tbody></table></div>`;
     }
 
     // ─── PRESCRIPTION ───
     if (prescriptionStats) {
       html += `
   <div class="section">
-    <div class="section-title"><h2>Prescription Analytics</h2><span class="badge">${prescriptionStats.totalPrescriptions} total</span></div>
-    <div class="grid-2">`;
-      const maxMed = prescriptionStats.topMeds.length > 0 ? Math.max(...prescriptionStats.topMeds.map(m => m.count)) : 1;
-      html += `
-      <div class="chart-box">
-        <h3>Top Prescribed Medications</h3>
-        <div class="sub">Most common prescriptions</div>
-        <div class="bar-container" style="margin-top:6px;">`;
+    <div class="section-title">Prescription Analytics</div>
+    <p style="margin-bottom:5px; font-weight:bold;">Total Prescriptions: ${prescriptionStats.totalPrescriptions}</p>
+    
+    <p style="font-weight:bold; margin-top:10px; font-size:11px;">Top Prescribed Medications</p>
+    <table>
+      <thead><tr><th>Medication Name</th><th class="text-right">Count</th></tr></thead>
+      <tbody>`;
       prescriptionStats.topMeds.forEach((item) => {
-        const pct = (item.count / maxMed) * 100;
-        html += `
-        <div class="bar-row">
-          <span class="bar-label" style="width:110px;font-size:11px;">${item.name}</span>
-          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:#d946ef"></div></div>
-          <span class="bar-val">${item.count}</span>
-        </div>`;
+        html += `<tr><td>${item.name}</td><td class="text-right">${item.count}</td></tr>`;
       });
-      html += `</div></div>`;
-      const maxTrend = Math.max(...prescriptionStats.monthlyTrend.map(m => m.count));
-      html += `
-      <div class="chart-box">
-        <h3>Prescription Trend</h3>
-        <div class="sub">Last 6 months</div>
-        <div class="bar-container" style="margin-top:6px;">`;
+      html += `</tbody></table>
+      
+    <p style="font-weight:bold; margin-top:15px; font-size:11px;">Prescription Trend (Last 6 Months)</p>
+    <table>
+      <thead><tr><th>Month</th><th class="text-right">Count</th></tr></thead>
+      <tbody>`;
       prescriptionStats.monthlyTrend.forEach((item) => {
-        const pct = maxTrend > 0 ? (item.count / maxTrend) * 100 : 0;
-        html += `
-        <div class="bar-row">
-          <span class="bar-label" style="width:60px;font-size:11px;">${item.month}</span>
-          <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:#06b6d4"></div></div>
-          <span class="bar-val">${item.count}</span>
-        </div>`;
+        html += `<tr><td>${item.month}</td><td class="text-right">${item.count}</td></tr>`;
       });
-      html += `</div></div></div></div>`;
+      html += `</tbody></table></div>`;
     }
 
     // ─── TODAY'S APPOINTMENTS ───
     if (todayAppointments.length > 0) {
       html += `
   <div class="section">
-    <div class="section-title"><h2>Today's Appointments</h2><span class="badge">${todayAppointments.length} today</span></div>
-    <div class="grid-3">`;
-      html += `
-      <div class="chart-box"><h3>Status</h3>`;
+    <div class="section-title">Today's Appointments Summary</div>
+    <table>
+      <thead><tr><th>Category</th><th>Value</th><th class="text-right">Count</th><th class="text-right">Percentage</th></tr></thead>
+      <tbody>`;
+      
       todayStatus.forEach((item) => {
         const pct = todayAppointments.length > 0 ? ((item.count / todayAppointments.length) * 100).toFixed(0) : 0;
-        html += `<div class="findings-row"><span>${item.name}</span><span class="cnt">${item.count} (${pct}%)</span></div>`;
+        html += `<tr><td>Status</td><td>${item.name}</td><td class="text-right">${item.count}</td><td class="text-right">${pct}%</td></tr>`;
       });
-      html += `</div>`;
-      html += `
-      <div class="chart-box"><h3>Services</h3>`;
+      
       todayService.forEach((item) => {
         const pct = todayAppointments.length > 0 ? ((item.count / todayAppointments.length) * 100).toFixed(0) : 0;
-        html += `<div class="findings-row"><span>${item.name}</span><span class="cnt">${item.count} (${pct}%)</span></div>`;
+        html += `<tr><td>Service</td><td>${item.name}</td><td class="text-right">${item.count}</td><td class="text-right">${pct}%</td></tr>`;
       });
-      html += `</div>`;
-      html += `
-      <div class="chart-box"><h3>Time Sessions</h3>`;
+
       todayTime.forEach((item) => {
         const pct = todayAppointments.length > 0 ? ((item.count / todayAppointments.length) * 100).toFixed(0) : 0;
-        html += `<div class="findings-row"><span style="font-size:11px;">${item.name}</span><span class="cnt">${item.count} (${pct}%)</span></div>`;
+        html += `<tr><td>Time Session</td><td>${item.name}</td><td class="text-right">${item.count}</td><td class="text-right">${pct}%</td></tr>`;
       });
-      html += `</div></div></div>`;
+
+      html += `</tbody></table></div>`;
     }
 
+    // ─── FOOTER (TABLE-BASED LAYOUT FOR BETTER PRINT) ───
     html += `
-  <div class="footer">
-    <p>Generated from Centra Clinic Analytics Dashboard • ${dateStr} at ${timeStr}</p>
-    <p style="margin-top:3px;">This report is for internal use only.</p>
+  <div class="report-footer">
+    <table class="footer-table">
+      <tr>
+        <td>
+          <p style="margin: 0; font-size: 10px;">Generated from Centra Clinic Analytics Dashboard</p>
+          <p style="margin: 0; font-size: 10px;">${dateStr} at ${timeStr}</p>
+        </td>
+        <td style="text-align: right;">
+          <div class="signature-box">Prepared by: Admin</div>
+        </td>
+      </tr>
+    </table>
   </div>
 </div>
 </body>
 </html>`;
 
-    printWindow.document.write(html);
-    printWindow.document.close();
-    setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
-    }, 500);
+    // ─── FIX IFRAME SIZE AND RECHARTS WARNING ───
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '1024px';
+    iframe.style.height = '768px';
+    iframe.style.opacity = '0';
+    iframe.style.pointerEvents = 'none';
+    iframe.style.zIndex = '-9999';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(html);
+      doc.close();
+      
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 1000);
+      }, 500);
+    }
   }, [
     appointmentData,
     consultationData,
@@ -882,6 +926,8 @@ export default function AnalyticsPage() {
     businessInsights,
     findingsData,
     prescriptionStats,
+    ageDistribution,
+    genderDistribution,
   ]);
 
   // ─── MEMOIZED ───
