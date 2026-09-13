@@ -1,62 +1,107 @@
-// app/api/admin/dashboard/prescription-stats/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+const ALL_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+
+function parseMonths(raw: string | null): number[] {
+  if (!raw) return [...ALL_MONTHS];
+  const parsed = raw
+    .split(",")
+    .map((m) => parseInt(m.trim(), 10))
+    .filter((m) => Number.isFinite(m) && m >= 1 && m <= 12);
+  const unique = Array.from(new Set(parsed)).sort((a, b) => a - b);
+  return unique.length > 0 ? unique : [...ALL_MONTHS];
+}
+
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const yearParam = searchParams.get("year");
+    const monthsParam = searchParams.get("months");
+
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const parsedYear = yearParam ? parseInt(yearParam, 10) : now.getFullYear();
+    const selectedYear = Number.isFinite(parsedYear)
+      ? parsedYear
+      : now.getFullYear();
+    const selectedMonths = parseMonths(monthsParam);
 
-    // Total this month
-    const totalPrescriptions = await prisma.prescription.count({
+    const firstMonth = selectedMonths[0];
+    const lastMonth = selectedMonths[selectedMonths.length - 1];
+
+    const rangeStart = new Date(selectedYear, firstMonth - 1, 1);
+    const rangeEnd = new Date(selectedYear, lastMonth, 1);
+
+    // Fetch all prescriptions in outer range, then strict-filter by month
+    const rangePrescriptions = await prisma.prescription.findMany({
       where: {
         createdAt: {
-          gte: startOfMonth,
-          lt: startOfNextMonth,
+          gte: rangeStart,
+          lt: rangeEnd,
         },
+      },
+      select: {
+        generic: true,
+        createdAt: true,
       },
     });
 
-    // Top 5 this month
-    const topMeds = await prisma.prescription.groupBy({
-      by: ["generic"],
-      where: {
-        createdAt: {
-          gte: startOfMonth,
-          lt: startOfNextMonth,
-        },
-      },
-      _count: { generic: true },
-      orderBy: { _count: { generic: "desc" } },
-      take: 5,
+    const filtered = rangePrescriptions.filter((p) => {
+      const month = p.createdAt.getMonth() + 1;
+      const year = p.createdAt.getFullYear();
+      return year === selectedYear && selectedMonths.includes(month);
     });
 
-    // 6-month trend (buwan-buwan, kasama na ang kasalukuyang buwan)
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    const totalPrescriptions = filtered.length;
 
-    const monthlyTrendRaw: any[] = await prisma.$queryRaw`
-      SELECT 
-        DATE_TRUNC('month', "createdAt") as month,
-        COUNT(*)::int as count
-      FROM "Prescription"
-      WHERE "createdAt" >= ${sixMonthsAgo}
-      GROUP BY DATE_TRUNC('month', "createdAt")
-      ORDER BY month ASC
-    `;
+    // Top 5 medications
+    const medCounts = new Map<string, number>();
+    filtered.forEach((p) => {
+      const key = p.generic || "Unspecified";
+      medCounts.set(key, (medCounts.get(key) || 0) + 1);
+    });
 
-    const monthlyTrend = monthlyTrendRaw.map((row: any) => ({
-      month: row.month.toLocaleString("en-US", { month: "short", year: "numeric" }),
-      count: Number(row.count),
-    }));
+    const topMeds = Array.from(medCounts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    // Monthly trend — 6 months ending at the last selected month
+    const trendEnd = new Date(selectedYear, lastMonth, 1);
+    const trendStart = new Date(selectedYear, lastMonth - 6, 1);
+
+    const trendRaw = await prisma.prescription.findMany({
+      where: {
+        createdAt: {
+          gte: trendStart,
+          lt: trendEnd,
+        },
+      },
+      select: {
+        createdAt: true,
+      },
+    });
+
+    const trendMap = new Map<string, number>();
+    trendRaw.forEach((p) => {
+      const d = p.createdAt;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      trendMap.set(key, (trendMap.get(key) || 0) + 1);
+    });
+
+    const monthlyTrend: { month: string; count: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(trendEnd.getFullYear(), trendEnd.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      monthlyTrend.push({
+        month: d.toLocaleString("en-US", { month: "short", year: "numeric" }),
+        count: trendMap.get(key) || 0,
+      });
+    }
 
     return NextResponse.json({
       totalPrescriptions,
-      topMeds: topMeds.map((item: any) => ({
-        name: item.generic,
-        count: item._count.generic,
-      })),
+      topMeds,
       monthlyTrend,
     });
   } catch (error) {
