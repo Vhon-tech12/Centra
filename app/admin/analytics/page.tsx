@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   Activity,
@@ -30,6 +30,7 @@ import {
   Eye,
   Bone,
   Printer,
+  ChevronDown,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { Cell } from "recharts";
@@ -56,6 +57,13 @@ const LineChart = dynamic(
   { ssr: false }
 );
 const Line = dynamic(() => import("recharts").then((mod) => mod.Line), {
+  ssr: false,
+});
+const AreaChart = dynamic(
+  () => import("recharts").then((mod) => mod.AreaChart),
+  { ssr: false }
+);
+const Area = dynamic(() => import("recharts").then((mod) => mod.Area), {
   ssr: false,
 });
 const XAxis = dynamic(() => import("recharts").then((mod) => mod.XAxis), {
@@ -175,14 +183,14 @@ type GenderDistribution = {
 
 // ─── COLOR SCHEMES ───
 const COLOR_SCHEMES = [
-  { bg: "bg-indigo-50", text: "text-indigo-600", border: "border-indigo-200", dot: "bg-indigo-500", fill: "#6366f1" },
-  { bg: "bg-emerald-50", text: "text-emerald-600", border: "border-emerald-200", dot: "bg-emerald-500", fill: "#10b981" },
-  { bg: "bg-amber-50", text: "text-amber-600", border: "border-amber-200", dot: "bg-amber-500", fill: "#f59e0b" },
-  { bg: "bg-rose-50", text: "text-rose-600", border: "border-rose-200", dot: "bg-rose-500", fill: "#f43f5e" },
-  { bg: "bg-violet-50", text: "text-violet-600", border: "border-violet-200", dot: "bg-violet-500", fill: "#8b5cf6" },
-  { bg: "bg-teal-50", text: "text-teal-600", border: "border-teal-200", dot: "bg-teal-500", fill: "#14b8a6" },
-  { bg: "bg-cyan-50", text: "text-cyan-600", border: "border-cyan-200", dot: "bg-cyan-500", fill: "#06b6d4" },
-  { bg: "bg-fuchsia-50", text: "text-fuchsia-600", border: "border-fuchsia-200", dot: "bg-fuchsia-500", fill: "#d946ef" },
+  { bg: "bg-indigo-50", text: "text-indigo-600", border: "border-indigo-200", dot: "bg-indigo-500", fill: "#6366f1", gradFrom: "#818cf8", gradTo: "#4f46e5" },
+  { bg: "bg-emerald-50", text: "text-emerald-600", border: "border-emerald-200", dot: "bg-emerald-500", fill: "#10b981", gradFrom: "#34d399", gradTo: "#059669" },
+  { bg: "bg-amber-50", text: "text-amber-600", border: "border-amber-200", dot: "bg-amber-500", fill: "#f59e0b", gradFrom: "#fbbf24", gradTo: "#d97706" },
+  { bg: "bg-rose-50", text: "text-rose-600", border: "border-rose-200", dot: "bg-rose-500", fill: "#f43f5e", gradFrom: "#fb7185", gradTo: "#e11d48" },
+  { bg: "bg-violet-50", text: "text-violet-600", border: "border-violet-200", dot: "bg-violet-500", fill: "#8b5cf6", gradFrom: "#a78bfa", gradTo: "#7c3aed" },
+  { bg: "bg-teal-50", text: "text-teal-600", border: "border-teal-200", dot: "bg-teal-500", fill: "#14b8a6", gradFrom: "#2dd4bf", gradTo: "#0d9488" },
+  { bg: "bg-cyan-50", text: "text-cyan-600", border: "border-cyan-200", dot: "bg-cyan-500", fill: "#06b6d4", gradFrom: "#22d3ee", gradTo: "#0891b2" },
+  { bg: "bg-fuchsia-50", text: "text-fuchsia-600", border: "border-fuchsia-200", dot: "bg-fuchsia-500", fill: "#d946ef", gradFrom: "#e879f9", gradTo: "#c026d3" },
 ];
 
 const CLINIC_TIME_BLOCKS = [
@@ -196,6 +204,8 @@ const CLINIC_TIME_BLOCKS = [
   "3:00 PM - 4:00 PM",
   "4:00 PM - 5:00 PM",
 ];
+
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // ─── UTILITIES ───
 function toNumber(value: unknown): number {
@@ -281,6 +291,29 @@ async function safeJsonFetch(url: string): Promise<{ ok: boolean; json: any }> {
 
 // ─── COMPONENTS ───
 
+function ChartGradientDefs({ prefix, from, to }: { prefix: string; from: string; to: string }) {
+  return (
+    <defs>
+      <linearGradient id={`${prefix}-bar`} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor={from} stopOpacity={1} />
+        <stop offset="100%" stopColor={to} stopOpacity={0.85} />
+      </linearGradient>
+      <linearGradient id={`${prefix}-bar-h`} x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stopColor={to} stopOpacity={0.95} />
+        <stop offset="100%" stopColor={from} stopOpacity={1} />
+      </linearGradient>
+      <linearGradient id={`${prefix}-line`} x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stopColor={to} />
+        <stop offset="100%" stopColor={from} />
+      </linearGradient>
+      <linearGradient id={`${prefix}-area`} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor={from} stopOpacity={0.35} />
+        <stop offset="100%" stopColor={from} stopOpacity={0} />
+      </linearGradient>
+    </defs>
+  );
+}
+
 function SimpleChartCard({
   title,
   subtitle,
@@ -296,13 +329,26 @@ function SimpleChartCard({
 }) {
   const scheme = COLOR_SCHEMES[colorIndex % COLOR_SCHEMES.length];
   return (
-    <div className={`rounded-xl border ${scheme.border} bg-white p-5 shadow-sm transition-shadow hover:shadow-md`}>
-      <div className="mb-3 flex items-start justify-between">
+    <div
+      className={`group relative overflow-hidden rounded-2xl border border-gray-100 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(0,0,0,0.06)]`}
+    >
+      <div
+        className="absolute inset-x-0 top-0 h-1"
+        style={{
+          background: `linear-gradient(90deg, ${scheme.gradTo}, ${scheme.gradFrom})`,
+        }}
+      />
+
+      <div className="mb-4 flex items-start justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-gray-800">{title}</h3>
+          {title && <h3 className="text-sm font-semibold text-gray-800">{title}</h3>}
           {subtitle && <p className="mt-0.5 text-xs text-gray-500">{subtitle}</p>}
         </div>
-        <div className={`h-2 w-2 rounded-full ${scheme.dot}`} />
+        <div
+          className={`flex h-6 w-6 items-center justify-center rounded-full ${scheme.bg}`}
+        >
+          <div className={`h-2 w-2 rounded-full ${scheme.dot}`} />
+        </div>
       </div>
       <div style={{ width: "100%", height }}>{children}</div>
     </div>
@@ -324,20 +370,36 @@ function SimpleMetricCard({
 }) {
   const scheme = COLOR_SCHEMES[colorIndex % COLOR_SCHEMES.length];
   return (
-    <div className="relative overflow-hidden rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
-      <div className="flex items-start justify-between">
+    <div className="group relative overflow-hidden rounded-2xl border border-gray-100 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_10px_30px_rgba(0,0,0,0.06)]">
+      <div
+        className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-[0.07] blur-2xl transition-opacity duration-300 group-hover:opacity-[0.14]"
+        style={{ background: `linear-gradient(135deg, ${scheme.gradFrom}, ${scheme.gradTo})` }}
+      />
+
+      <div className="relative flex items-start justify-between">
         <div className="space-y-1">
           <p className="text-xs font-medium uppercase tracking-wider text-gray-500">{label}</p>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
+          <p className="text-2xl font-bold tracking-tight text-gray-900">{value}</p>
           {subLabel && <p className="text-xs text-gray-400">{subLabel}</p>}
         </div>
         {icon && (
-          <div className={`rounded-lg ${scheme.bg} p-2.5`}>
-            <div className={`h-5 w-5 ${scheme.text}`}>{icon}</div>
+          <div
+            className={`flex h-11 w-11 items-center justify-center rounded-xl text-white shadow-md`}
+            style={{
+              background: `linear-gradient(135deg, ${scheme.gradFrom}, ${scheme.gradTo})`,
+            }}
+          >
+            <div className="h-5 w-5">{icon}</div>
           </div>
         )}
       </div>
-      <div className={`absolute bottom-0 left-0 h-1 w-full ${scheme.bg}`} />
+
+      <div
+        className="absolute bottom-0 left-0 h-1 w-full"
+        style={{
+          background: `linear-gradient(90deg, ${scheme.gradTo}, ${scheme.gradFrom})`,
+        }}
+      />
     </div>
   );
 }
@@ -353,6 +415,8 @@ export default function AnalyticsPage() {
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
   ]);
   const [year, setYear] = useState<number>(new Date().getFullYear());
+  const [monthsDropdownOpen, setMonthsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [appointmentData, setAppointmentData] = useState<AppointmentBarItem[]>([]);
   const [consultationData, setConsultationData] = useState<ConsultationItem[]>([]);
@@ -370,6 +434,19 @@ export default function AnalyticsPage() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setMonthsDropdownOpen(false);
+      }
+    };
+    if (monthsDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [monthsDropdownOpen]);
 
   const fetchAppointmentData = useCallback(async () => {
     const { ok, json } = await safeJsonFetch(
@@ -391,8 +468,11 @@ export default function AnalyticsPage() {
     }
   }, []);
 
+  // ─── Now accepts year + months filter ───
   const fetchConsultationData = useCallback(async () => {
-    const { ok, json } = await safeJsonFetch("/api/admin/dashboard/consultations");
+    const { ok, json } = await safeJsonFetch(
+      `/api/admin/dashboard/consultations?year=${year}&months=${selectedMonths.join(",")}`
+    );
     if (ok) {
       setConsultationData(Array.isArray(json.data) ? json.data : []);
       setHighestService(json.highestService || null);
@@ -401,31 +481,39 @@ export default function AnalyticsPage() {
     } else {
       setApiError(json.error || "Failed to load consultation data.");
     }
-  }, []);
+  }, [selectedMonths, year]);
 
+  // ─── Now accepts year + months filter ───
   const fetchBusinessInsights = useCallback(async () => {
-    const { ok, json } = await safeJsonFetch("/api/admin/dashboard/business-insights");
+    const { ok, json } = await safeJsonFetch(
+      `/api/admin/dashboard/business-insights?year=${year}&months=${selectedMonths.join(",")}`
+    );
     if (ok) {
       setBusinessInsights(json);
     } else {
       setApiError(json.error || "Failed to load business insights.");
     }
-  }, []);
+  }, [selectedMonths, year]);
 
+  // ─── Now accepts year + months filter (backend needs same update) ───
   const fetchFindingsData = useCallback(async () => {
-    const { ok, json } = await safeJsonFetch("/api/admin/dashboard/findings");
+    const { ok, json } = await safeJsonFetch(
+      `/api/admin/dashboard/findings?year=${year}&months=${selectedMonths.join(",")}`
+    );
     if (ok) {
       setFindingsData(Array.isArray(json.data) ? json.data : []);
     } else {
       console.warn("Failed to load findings data:", json.error);
     }
-  }, []);
+  }, [selectedMonths, year]);
 
+  // ─── Now accepts year + months filter (backend needs same update) ───
   const fetchPrescriptionStats = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/dashboard/prescription-stats", {
-        cache: "no-store",
-      });
+      const res = await fetch(
+        `/api/admin/dashboard/prescription-stats?year=${year}&months=${selectedMonths.join(",")}`,
+        { cache: "no-store" }
+      );
       const data = await res.json();
       if (res.ok) {
         setPrescriptionStats(data);
@@ -435,13 +523,15 @@ export default function AnalyticsPage() {
     } catch (error) {
       console.error("Error fetching prescription stats:", error);
     }
-  }, []);
+  }, [selectedMonths, year]);
 
+  // ─── Now accepts year + months filter (backend needs same update) ───
   const fetchAgeDistribution = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/dashboard/age-distribution", {
-        cache: "no-store",
-      });
+      const res = await fetch(
+        `/api/admin/dashboard/age-distribution?year=${year}&months=${selectedMonths.join(",")}`,
+        { cache: "no-store" }
+      );
       const data = await res.json();
       if (res.ok) {
         setAgeDistribution(data);
@@ -451,13 +541,15 @@ export default function AnalyticsPage() {
     } catch (error) {
       console.error("Error fetching age distribution:", error);
     }
-  }, []);
+  }, [selectedMonths, year]);
 
+  // ─── Now accepts year + months filter (backend needs same update) ───
   const fetchGenderDistribution = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/dashboard/gender-distribution", {
-        cache: "no-store",
-      });
+      const res = await fetch(
+        `/api/admin/dashboard/gender-distribution?year=${year}&months=${selectedMonths.join(",")}`,
+        { cache: "no-store" }
+      );
       const data = await res.json();
       if (res.ok) {
         setGenderDistribution(data);
@@ -467,7 +559,7 @@ export default function AnalyticsPage() {
     } catch (error) {
       console.error("Error fetching gender distribution:", error);
     }
-  }, []);
+  }, [selectedMonths, year]);
 
   const refreshAnalytics = useCallback(async () => {
     try {
@@ -503,7 +595,7 @@ export default function AnalyticsPage() {
     }
   }, [mounted, refreshAnalytics]);
 
-  // ─── PRINT FUNCTION (UPDATED) ───
+  // ─── PRINT FUNCTION ───
   const handlePrint = useCallback(() => {
     const now = new Date();
     const dateStr = now.toLocaleDateString('en-US', {
@@ -514,7 +606,6 @@ export default function AnalyticsPage() {
     });
     const timeStr = now.toLocaleTimeString();
 
-    // ─── GROUP CONSULTATION DATA ───
     const consultMap = new Map<string, number>();
     consultationData.forEach((item) => {
       const name = item.name.trim();
@@ -522,7 +613,6 @@ export default function AnalyticsPage() {
     });
     const uniqueConsultation = Array.from(consultMap.entries()).map(([name, value]) => ({ name, value }));
 
-    // ─── GROUP STATUS DATA ───
     const statusMap = new Map<string, { count: number; status: string }>();
     if (businessInsights?.statusBreakdown) {
       businessInsights.statusBreakdown.forEach((item) => {
@@ -544,7 +634,6 @@ export default function AnalyticsPage() {
     }
     const groupedStatus = Array.from(statusMap.values());
 
-    // ─── TODAY DATA ───
     const todayStatusMap = new Map<string, number>();
     todayAppointments.forEach((item) => {
       const s = normalizeStatus(item.status);
@@ -566,57 +655,40 @@ export default function AnalyticsPage() {
     });
     const todayTime = Array.from(todayTimeMap.entries()).map(([name, count]) => ({ name, count }));
 
-    // ─── METRICS ───
     const totalBookings = appointmentData.reduce((sum, item) => sum + toNumber(item.count), 0);
     const uniquePatients = new Set(todayAppointments.map((item) => item.fullName)).size;
     const cancellationRate = businessInsights?.cancellationRate || 0;
 
-    // ─── BUILD HTML (FORMAL FORMAT) ───
     let html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <title> </title>
   <style>
-    /* Standard Margins */
     @page { margin: 15mm; }
-    
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #000; font-size: 12px; line-height: 1.4; padding: 0; }
     .container { width: 100%; max-width: 1000px; margin: 0 auto; }
-    
-    /* Improved Header Layout */
     .report-header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #000; padding-bottom: 15px; margin-bottom: 25px; page-break-inside: avoid; }
     .header-left { display: flex; align-items: center; gap: 15px; }
-    
-    /* LOGO STYLE */
     .logo-img { width: 60px; height: 60px; object-fit: contain; border-radius: 50%; border: 1px solid #000; }
-    
     .clinic-info h1 { font-size: 20px; margin: 0 0 2px 0; text-transform: uppercase; letter-spacing: 1px; }
     .clinic-info p { font-size: 12px; color: #333; margin: 0; }
     .header-right { text-align: right; font-size: 11px; }
     .header-right p { margin: 2px 0; }
-    
-    /* Summary Boxes */
     .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 25px; page-break-inside: avoid; }
     .summary-box { border: 1px solid #000; padding: 10px; text-align: center; }
     .summary-box .label { font-size: 10px; text-transform: uppercase; font-weight: bold; }
     .summary-box .value { font-size: 18px; font-weight: bold; margin-top: 5px; }
     .summary-box .sub { font-size: 10px; color: #555; }
-    
-    /* Sections */
     .section { margin-bottom: 25px; page-break-inside: auto; }
     .section-title { font-size: 12px; font-weight: bold; text-transform: uppercase; border-bottom: 1px solid #000; padding-bottom: 3px; margin-bottom: 10px; page-break-after: avoid; }
-    
-    /* Tables */
     table { width: 100%; border-collapse: collapse; margin-bottom: 15px; page-break-inside: auto; }
     th, td { border: 1px solid #000; padding: 6px 8px; text-align: left; font-size: 11px; }
     th { background-color: #f0f0f0; font-weight: bold; text-transform: uppercase; page-break-after: avoid; }
     tr { page-break-inside: avoid; page-break-after: auto; }
     .text-right { text-align: right; }
     .text-center { text-align: center; }
-    
-    /* Footer */
     .report-footer { margin-top: 50px; border-top: 1px solid #000; padding-top: 15px; font-size: 10px; width: 100%; page-break-inside: avoid; }
     .footer-table { width: 100%; border: none; margin: 0; padding: 0; }
     .footer-table td { border: none; padding: 0; vertical-align: bottom; }
@@ -627,9 +699,7 @@ export default function AnalyticsPage() {
 <div class="container">
   <div class="report-header">
     <div class="header-left">
-      <!-- LOGO -->
       <img src="/centraLogo.jpg" alt="Centra Clinic Logo" class="logo-img" />
-      
       <div class="clinic-info">
         <h1>CENTRA CLINIC</h1>
         <p>Analytics and Operations Report</p>
@@ -661,14 +731,12 @@ export default function AnalyticsPage() {
     </div>
   </div>`;
 
-    // ─── PATIENT DEMOGRAPHICS ───
     if (ageDistribution && genderDistribution) {
       const pediatricCount = ageDistribution.ageGroups.find(g => g.group === "0-12")?.count || 0;
       const adultCount = (ageDistribution.ageGroups.find(g => g.group === "13-19")?.count || 0) + 
                          (ageDistribution.ageGroups.find(g => g.group === "20-59")?.count || 0);
       const geriatricCount = ageDistribution.ageGroups.find(g => g.group === "60+")?.count || 0;
       const totalAge = pediatricCount + adultCount + geriatricCount;
-      
       const totalGender = genderDistribution.genderData.reduce((s, g) => s + g.count, 0);
 
       const groupedAges = [
@@ -706,7 +774,6 @@ export default function AnalyticsPage() {
   </div>`;
     }
 
-    // ─── CONSULTATION ───
     if (uniqueConsultation.length > 0) {
       const total = uniqueConsultation.reduce((s, i) => s + i.value, 0);
       html += `
@@ -722,7 +789,6 @@ export default function AnalyticsPage() {
       html += `</tbody></table></div>`;
     }
 
-    // ─── STATUS ───
     if (groupedStatus.length > 0) {
       const total = groupedStatus.reduce((s, i) => s + i.count, 0);
       html += `
@@ -738,7 +804,6 @@ export default function AnalyticsPage() {
       html += `</tbody></table></div>`;
     }
 
-    // ─── SERVICE DEMAND ───
     if (businessInsights?.serviceStats && businessInsights.serviceStats.length > 0) {
       const total = businessInsights.serviceStats.reduce((s, i) => s + i.count, 0);
       html += `
@@ -754,7 +819,6 @@ export default function AnalyticsPage() {
       html += `</tbody></table></div>`;
     }
 
-    // ─── BUSIEST DAYS ───
     if (businessInsights?.dayStats && businessInsights.dayStats.length > 0) {
       const total = businessInsights.dayStats.reduce((s, i) => s + i.count, 0);
       html += `
@@ -770,7 +834,6 @@ export default function AnalyticsPage() {
       html += `</tbody></table></div>`;
     }
 
-    // ─── PEAK HOURS ───
     if (businessInsights?.timeBlockStats && businessInsights.timeBlockStats.length > 0) {
       const total = businessInsights.timeBlockStats.reduce((s, i) => s + i.count, 0);
       html += `
@@ -786,7 +849,6 @@ export default function AnalyticsPage() {
       html += `</tbody></table></div>`;
     }
 
-    // ─── DOCTOR WORKLOAD ───
     if (businessInsights?.doctorWorkload && businessInsights.doctorWorkload.length > 0) {
       const total = businessInsights.doctorWorkload.reduce((s, i) => s + i.count, 0);
       html += `
@@ -802,7 +864,6 @@ export default function AnalyticsPage() {
       html += `</tbody></table></div>`;
     }
 
-    // ─── CLINICAL FINDINGS ───
     if (findingsData.length > 0) {
       const totalFindings = findingsData.reduce((s, d) => s + d.count, 0);
       html += `
@@ -818,7 +879,6 @@ export default function AnalyticsPage() {
       html += `</tbody></table></div>`;
     }
 
-    // ─── PRESCRIPTION ───
     if (prescriptionStats) {
       html += `
   <div class="section">
@@ -844,7 +904,6 @@ export default function AnalyticsPage() {
       html += `</tbody></table></div>`;
     }
 
-    // ─── TODAY'S APPOINTMENTS ───
     if (todayAppointments.length > 0) {
       html += `
   <div class="section">
@@ -871,7 +930,6 @@ export default function AnalyticsPage() {
       html += `</tbody></table></div>`;
     }
 
-    // ─── FOOTER (TABLE-BASED LAYOUT FOR BETTER PRINT) ───
     html += `
   <div class="report-footer">
     <table class="footer-table">
@@ -890,7 +948,6 @@ export default function AnalyticsPage() {
 </body>
 </html>`;
 
-    // ─── FIX IFRAME SIZE AND RECHARTS WARNING ───
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
@@ -1025,20 +1082,22 @@ export default function AnalyticsPage() {
 
   // ─── RENDER ───
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 p-6">
       {/* HEADER */}
-      <header className="mb-8 flex flex-col gap-4 rounded-2xl bg-white p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+      <header className="mb-8 flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.04)] lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-800">
-            <BarChart3 className="h-7 w-7 text-indigo-600" />
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white shadow-md">
+              <BarChart3 className="h-5 w-5" />
+            </span>
             Analytics Dashboard
           </h1>
-          <p className="text-sm text-gray-500">
+          <p className="mt-1 text-sm text-gray-500">
             Comprehensive business analysis for bookings, services, schedules, and clinical insights
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-600">
+          <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-600">
             <CalendarDays className="h-4 w-4 text-gray-400" />
             {new Date().toLocaleDateString("en-US", {
               weekday: "long",
@@ -1050,7 +1109,7 @@ export default function AnalyticsPage() {
           <button
             onClick={handlePrint}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-emerald-700 hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Printer className="h-4 w-4" />
             Print Report
@@ -1058,7 +1117,7 @@ export default function AnalyticsPage() {
           <button
             onClick={refreshAnalytics}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-indigo-700 hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             {loading ? "Refreshing..." : "Refresh Data"}
@@ -1104,7 +1163,7 @@ export default function AnalyticsPage() {
 
         {/* PATIENT DEMOGRAPHICS */}
         {ageDistribution && genderDistribution && (
-          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
             <div className="mb-4 flex items-start justify-between">
               <div>
                 <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -1120,39 +1179,44 @@ export default function AnalyticsPage() {
 
             {ageSummary && (
               <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-amber-50 to-amber-100/50 p-4 shadow-sm">
-                  <p className="text-xs font-medium uppercase tracking-wider text-amber-700">Total Patients</p>
-                  <p className="mt-1 text-2xl font-bold text-gray-900">{ageSummary.total}</p>
+                <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-amber-100 opacity-60 blur-2xl" />
+                  <p className="relative text-xs font-medium uppercase tracking-wider text-amber-700">Total Patients</p>
+                  <p className="relative mt-1 text-2xl font-bold text-gray-900">{ageSummary.total}</p>
                 </div>
-                <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-emerald-50 to-emerald-100/50 p-4 shadow-sm">
-                  <p className="text-xs font-medium uppercase tracking-wider text-emerald-700">Pediatric (0‑12)</p>
-                  <p className="mt-1 text-2xl font-bold text-gray-900">{ageSummary.pediatric}</p>
+                <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-100 opacity-60 blur-2xl" />
+                  <p className="relative text-xs font-medium uppercase tracking-wider text-emerald-700">Pediatric (0‑12)</p>
+                  <p className="relative mt-1 text-2xl font-bold text-gray-900">{ageSummary.pediatric}</p>
                 </div>
-                <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-blue-50 to-blue-100/50 p-4 shadow-sm">
-                  <p className="text-xs font-medium uppercase tracking-wider text-blue-700">Adult (13‑59)</p>
-                  <p className="mt-1 text-2xl font-bold text-gray-900">{ageSummary.adult}</p>
+                <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-blue-100 opacity-60 blur-2xl" />
+                  <p className="relative text-xs font-medium uppercase tracking-wider text-blue-700">Adult (13‑59)</p>
+                  <p className="relative mt-1 text-2xl font-bold text-gray-900">{ageSummary.adult}</p>
                 </div>
-                <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-rose-50 to-rose-100/50 p-4 shadow-sm">
-                  <p className="text-xs font-medium uppercase tracking-wider text-rose-700">Geriatric (60+)</p>
-                  <p className="mt-1 text-2xl font-bold text-gray-900">{ageSummary.geriatric}</p>
+                <div className="relative overflow-hidden rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-rose-100 opacity-60 blur-2xl" />
+                  <p className="relative text-xs font-medium uppercase tracking-wider text-rose-700">Geriatric (60+)</p>
+                  <p className="relative mt-1 text-2xl font-bold text-gray-900">{ageSummary.geriatric}</p>
                 </div>
               </div>
             )}
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <SimpleChartCard title="" height={260} colorIndex={2}>
+              <SimpleChartCard title="Age Distribution" subtitle="Patients per age group" height={260} colorIndex={2}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={ageDistribution.ageGroups} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <ChartGradientDefs prefix="age" from={COLOR_SCHEMES[2].gradFrom} to={COLOR_SCHEMES[2].gradTo} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis type="number" stroke="#9ca3af" fontSize={12} allowDecimals={false} />
                     <YAxis type="category" dataKey="group" stroke="#9ca3af" fontSize={12} width={60} />
-                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" }} />
-                    <Bar dataKey="count" name="Patients" fill={COLOR_SCHEMES[2].fill} radius={[0, 4, 4, 0]} />
+                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 12px", fontSize: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
+                    <Bar dataKey="count" name="Patients" fill="url(#age-bar-h)" radius={[0, 6, 6, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </SimpleChartCard>
 
-              <SimpleChartCard title="" height={260} colorIndex={3}>
+              <SimpleChartCard title="Gender Distribution" subtitle="Patient breakdown" height={260} colorIndex={3}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -1170,7 +1234,7 @@ export default function AnalyticsPage() {
                         <Cell key={index} fill={COLOR_SCHEMES[(index + 3) % COLOR_SCHEMES.length].fill} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" }} />
+                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 12px", fontSize: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
                     <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: "11px", paddingTop: "6px" }} />
                   </PieChart>
                 </ResponsiveContainer>
@@ -1179,52 +1243,265 @@ export default function AnalyticsPage() {
           </section>
         )}
 
-        {/* MONTHLY FILTER */}
-        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        {/* ================= MONTHLY FILTER (DROPDOWN) ================= */}
+        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                <Filter className="h-4 w-4 text-gray-400" />
-                Monthly Filter
+                <Filter className="h-4 w-4 text-indigo-500" />
+                Filter Period
               </h3>
-              <p className="text-xs text-gray-500">Select months to update the booking trend graphs.</p>
+              <p className="mt-0.5 text-xs text-gray-500">
+                Choose which months and year to display in the charts.
+              </p>
             </div>
+
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">Year</span>
-              <input
-                type="number"
-                value={year}
-                onChange={(e) => setYear(parseInt(e.target.value) || new Date().getFullYear())}
-                className="w-20 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200"
-              />
+              {/* Year input */}
+              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                <CalendarDays className="h-3.5 w-3.5 text-gray-400" />
+                <input
+                  type="number"
+                  value={year}
+                  onChange={(e) => setYear(parseInt(e.target.value) || new Date().getFullYear())}
+                  className="w-16 bg-transparent text-sm font-medium text-gray-700 outline-none"
+                />
+              </div>
+
+              {/* Dropdown trigger */}
+              <div ref={dropdownRef} className="relative">
+                <button
+                  type="button"
+                  onClick={() => setMonthsDropdownOpen((v) => !v)}
+                  className="flex w-full min-w-[220px] items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-left text-sm shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50/40 sm:w-auto"
+                  aria-expanded={monthsDropdownOpen}
+                  aria-haspopup="true"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-indigo-100 text-[10px] font-bold text-indigo-600">
+                      {selectedMonths.length}
+                    </span>
+                    <span className="font-medium text-gray-700">
+                      {selectedMonths.length === 0
+                        ? "Select months"
+                        : selectedMonths.length === 12
+                        ? "All months"
+                        : `${selectedMonths.length} month${selectedMonths.length > 1 ? "s" : ""} selected`}
+                    </span>
+                  </span>
+                  <ChevronDown
+                    className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
+                      monthsDropdownOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+
+                {/* Dropdown panel */}
+                {monthsDropdownOpen && (
+                  <div className="absolute right-0 z-30 mt-2 w-[340px] origin-top-right overflow-hidden rounded-xl border border-gray-200 bg-white shadow-[0_10px_40px_rgba(0,0,0,0.12)]">
+                    {/* Presets */}
+                    <div className="flex items-center gap-1.5 border-b border-gray-100 bg-gray-50/60 p-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMonths([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])}
+                        className="flex-1 rounded-md px-2 py-1.5 text-[11px] font-semibold text-gray-600 transition hover:bg-white hover:text-indigo-600 hover:shadow-sm"
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentMonth = new Date().getMonth() + 1;
+                          setSelectedMonths([currentMonth]);
+                        }}
+                        className="flex-1 rounded-md px-2 py-1.5 text-[11px] font-semibold text-gray-600 transition hover:bg-white hover:text-indigo-600 hover:shadow-sm"
+                      >
+                        This Month
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentMonth = new Date().getMonth() + 1;
+                          const last6: number[] = [];
+                          for (let i = 5; i >= 0; i--) {
+                            const m = currentMonth - i;
+                            if (m > 0) last6.push(m);
+                          }
+                          setSelectedMonths(last6);
+                        }}
+                        className="flex-1 rounded-md px-2 py-1.5 text-[11px] font-semibold text-gray-600 transition hover:bg-white hover:text-indigo-600 hover:shadow-sm"
+                      >
+                        Last 6
+                      </button>
+                    </div>
+
+                    {/* Month checkboxes grid */}
+                    <div className="grid grid-cols-3 gap-1 p-2.5">
+                      {MONTH_LABELS.map((month, index) => {
+                        const monthNum = index + 1;
+                        const isSelected = selectedMonths.includes(monthNum);
+                        return (
+                          <button
+                            key={month}
+                            type="button"
+                            onClick={() => {
+                              setSelectedMonths((prev) =>
+                                prev.includes(monthNum)
+                                  ? prev.filter((m) => m !== monthNum)
+                                  : [...prev, monthNum].sort((a, b) => a - b)
+                              );
+                            }}
+                            className={`flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-medium transition ${
+                              isSelected
+                                ? "bg-indigo-50 text-indigo-700"
+                                : "text-gray-600 hover:bg-gray-50"
+                            }`}
+                          >
+                            <span
+                              className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border transition ${
+                                isSelected
+                                  ? "border-indigo-500 bg-indigo-500"
+                                  : "border-gray-300 bg-white"
+                              }`}
+                            >
+                              {isSelected && (
+                                <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none">
+                                  <path
+                                    d="M2 6L5 9L10 3"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                </svg>
+                              )}
+                            </span>
+                            {month}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50/60 px-3 py-2">
+                      <span className="text-[11px] font-medium text-gray-500">
+                        {selectedMonths.length} of 12 selected
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMonths([])}
+                          disabled={selectedMonths.length === 0}
+                          className="rounded-md px-2.5 py-1 text-[11px] font-semibold text-gray-500 transition hover:bg-white hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMonthsDropdownOpen(false)}
+                          className="rounded-md bg-indigo-600 px-3 py-1 text-[11px] font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map((month, index) => (
-              <label
-                key={month}
-                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
-                  selectedMonths.includes(index + 1)
-                    ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                    : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedMonths.includes(index + 1)}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedMonths((prev) => (prev.includes(index + 1) ? prev : [...prev, index + 1]));
-                    } else {
-                      setSelectedMonths((prev) => prev.filter((item) => item !== index + 1));
-                    }
-                  }}
-                  className="h-3 w-3 rounded border-gray-300 text-indigo-600"
-                />
-                {month}
-              </label>
-            ))}
-          </div>
+
+          {/* Selected month chips (inline preview) */}
+          {selectedMonths.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-1.5 border-t border-gray-100 pt-3">
+              {selectedMonths.map((m) => (
+                <span
+                  key={m}
+                  className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700"
+                >
+                  {MONTH_LABELS[m - 1]}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMonths((prev) => prev.filter((x) => x !== m))}
+                    className="flex h-3.5 w-3.5 items-center justify-center rounded-full text-indigo-500 transition hover:bg-indigo-200 hover:text-indigo-800"
+                    aria-label={`Remove ${MONTH_LABELS[m - 1]}`}
+                  >
+                    <svg className="h-2.5 w-2.5" viewBox="0 0 12 12" fill="none">
+                      <path d="M3 3L9 9M9 3L3 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {selectedMonths.length === 0 && (
+            <div className="mt-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span>No months selected. Charts will be empty until you pick at least one.</span>
+            </div>
+          )}
+        </section>
+
+        {/* ================= MONTHLY BOOKINGS (CONTROLLED BY FILTER) ================= */}
+        <section className="grid grid-cols-1 gap-6">
+          <SimpleChartCard
+            title="Monthly Bookings"
+            subtitle={
+              selectedMonths.length === 0
+                ? "No months selected"
+                : selectedMonths.length === 12
+                ? `All months of ${year}`
+                : `${selectedMonths.length} selected month${selectedMonths.length > 1 ? "s" : ""} in ${year}`
+            }
+            height={320}
+            colorIndex={0}
+          >
+            {appointmentData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={appointmentData}>
+                  <ChartGradientDefs
+                    prefix="appt"
+                    from={COLOR_SCHEMES[0].gradFrom}
+                    to={COLOR_SCHEMES[0].gradTo}
+                  />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="month" stroke="#9ca3af" fontSize={12} />
+                  <YAxis stroke="#9ca3af" fontSize={12} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "white",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: "10px",
+                      padding: "8px 12px",
+                      fontSize: "12px",
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="count"
+                    name="Bookings"
+                    stroke="url(#appt-line)"
+                    strokeWidth={2.5}
+                    fill="url(#appt-area)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-gray-400">
+                <svg className="h-8 w-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <p>No bookings for the selected period</p>
+                <p className="text-[11px] text-gray-400">
+                  Try selecting different months or changing the year
+                </p>
+              </div>
+            )}
+          </SimpleChartCard>
         </section>
 
         {mounted && (
@@ -1248,7 +1525,7 @@ export default function AnalyticsPage() {
                         <Cell key={index} fill={COLOR_SCHEMES[(index + 3) % COLOR_SCHEMES.length].fill} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" }} />
+                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 12px", fontSize: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
                     <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: "11px", paddingTop: "6px" }} />
                   </PieChart>
                 </ResponsiveContainer>
@@ -1260,11 +1537,12 @@ export default function AnalyticsPage() {
               <SimpleChartCard title="Service Demand Ranking" subtitle="Most booked services" colorIndex={4}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={serviceDemandData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <ChartGradientDefs prefix="svc" from={COLOR_SCHEMES[4].gradFrom} to={COLOR_SCHEMES[4].gradTo} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis type="number" stroke="#9ca3af" fontSize={12} allowDecimals={false} />
                     <YAxis type="category" dataKey="name" stroke="#9ca3af" fontSize={11} width={100} />
-                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" }} />
-                    <Bar dataKey="count" name="Bookings" fill={COLOR_SCHEMES[4].fill} radius={[0, 4, 4, 0]} />
+                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 12px", fontSize: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
+                    <Bar dataKey="count" name="Bookings" fill="url(#svc-bar-h)" radius={[0, 6, 6, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </SimpleChartCard>
@@ -1287,7 +1565,7 @@ export default function AnalyticsPage() {
                         <Cell key={index} fill={COLOR_SCHEMES[(index + 5) % COLOR_SCHEMES.length].fill} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" }} />
+                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 12px", fontSize: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
                     <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: "11px", paddingTop: "6px" }} />
                   </PieChart>
                 </ResponsiveContainer>
@@ -1299,11 +1577,12 @@ export default function AnalyticsPage() {
               <SimpleChartCard title="Busiest Booking Days" subtitle="Day-of-week popularity" colorIndex={6}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={dayDemandData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <ChartGradientDefs prefix="day" from={COLOR_SCHEMES[6].gradFrom} to={COLOR_SCHEMES[6].gradTo} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="day" stroke="#9ca3af" fontSize={12} />
                     <YAxis stroke="#9ca3af" fontSize={12} allowDecimals={false} />
-                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" }} />
-                    <Bar dataKey="count" name="Bookings" fill={COLOR_SCHEMES[6].fill} radius={[4, 4, 0, 0]} />
+                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 12px", fontSize: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
+                    <Bar dataKey="count" name="Bookings" fill="url(#day-bar)" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </SimpleChartCard>
@@ -1311,11 +1590,12 @@ export default function AnalyticsPage() {
               <SimpleChartCard title="Peak Booking Sessions" subtitle="Time-of-day distribution" colorIndex={7}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={timeDemandData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <ChartGradientDefs prefix="tm" from={COLOR_SCHEMES[7].gradFrom} to={COLOR_SCHEMES[7].gradTo} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="timeBlock" stroke="#9ca3af" fontSize={10} interval={0} angle={-25} textAnchor="end" height={80} />
                     <YAxis stroke="#9ca3af" fontSize={12} allowDecimals={false} />
-                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" }} />
-                    <Bar dataKey="count" name="Bookings" fill={COLOR_SCHEMES[7].fill} radius={[4, 4, 0, 0]} />
+                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 12px", fontSize: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
+                    <Bar dataKey="count" name="Bookings" fill="url(#tm-bar)" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </SimpleChartCard>
@@ -1326,11 +1606,12 @@ export default function AnalyticsPage() {
               <SimpleChartCard title="Doctor Workload" subtitle="Appointments per doctor" colorIndex={0}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={doctorWorkloadData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <ChartGradientDefs prefix="doc" from={COLOR_SCHEMES[0].gradFrom} to={COLOR_SCHEMES[0].gradTo} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis type="number" stroke="#9ca3af" fontSize={12} allowDecimals={false} />
                     <YAxis type="category" dataKey="doctorName" stroke="#9ca3af" fontSize={11} width={120} />
-                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" }} />
-                    <Bar dataKey="count" name="Appointments" fill={COLOR_SCHEMES[0].fill} radius={[0, 4, 4, 0]} />
+                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 12px", fontSize: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
+                    <Bar dataKey="count" name="Appointments" fill="url(#doc-bar-h)" radius={[0, 6, 6, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </SimpleChartCard>
@@ -1355,7 +1636,7 @@ export default function AnalyticsPage() {
                       <Cell fill={COLOR_SCHEMES[1].fill} />
                       <Cell fill="#e5e7eb" />
                     </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" }} />
+                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 12px", fontSize: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
                     <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: "11px", paddingTop: "6px" }} />
                   </PieChart>
                 </ResponsiveContainer>
@@ -1363,7 +1644,7 @@ export default function AnalyticsPage() {
             </section>
 
             {/* CLINICAL FINDINGS */}
-            <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
               <div className="mb-4 flex items-start justify-between">
                 <div>
                   <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -1384,9 +1665,13 @@ export default function AnalyticsPage() {
                   return (
                     <div
                       key={item.title}
-                      className={`rounded-xl border ${scheme.border} bg-white p-4 shadow-sm transition-shadow hover:shadow-md`}
+                      className="group relative overflow-hidden rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md"
                     >
-                      <h4 className="mb-3 text-center text-sm font-semibold text-gray-700">
+                      <div
+                        className="absolute inset-x-0 top-0 h-1"
+                        style={{ background: `linear-gradient(90deg, ${scheme.gradTo}, ${scheme.gradFrom})` }}
+                      />
+                      <h4 className="mb-3 mt-1 text-center text-sm font-semibold text-gray-700">
                         {item.emoji} {item.title}
                         <span className="ml-1 text-xs font-normal text-gray-400">
                           ({item.data.reduce((sum, d) => sum + d.value, 0)})
@@ -1412,7 +1697,7 @@ export default function AnalyticsPage() {
                                   <Cell key={`cell-${index}`} fill={COLOR_SCHEMES[(index + item.colorIndex) % COLOR_SCHEMES.length].fill} />
                                 ))}
                               </Pie>
-                              <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "6px 10px", fontSize: "11px" }} />
+                              <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "6px 10px", fontSize: "11px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
                               <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: "9px", paddingTop: "4px" }} />
                             </>
                           ) : (
@@ -1430,14 +1715,14 @@ export default function AnalyticsPage() {
 
             {/* PRESCRIPTION ANALYTICS */}
             {prescriptionStats && (
-              <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+              <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
                 <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
                       <Stethoscope className="h-4 w-4 text-violet-500" />
                       Prescription Analytics
                       <span className="ml-2 rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-700">
-                        This month
+                        Selected period
                       </span>
                     </h3>
                     <p className="text-xs text-gray-500">
@@ -1452,11 +1737,12 @@ export default function AnalyticsPage() {
                     <SimpleChartCard title="" height={240} colorIndex={6}>
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={prescriptionStats.topMeds} layout="vertical">
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                          <ChartGradientDefs prefix="med" from={COLOR_SCHEMES[6].gradFrom} to={COLOR_SCHEMES[6].gradTo} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                           <XAxis type="number" stroke="#9ca3af" fontSize={12} allowDecimals={false} />
                           <YAxis type="category" dataKey="name" stroke="#9ca3af" fontSize={11} width={120} />
-                          <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" }} />
-                          <Bar dataKey="count" name="Prescriptions" fill={COLOR_SCHEMES[6].fill} radius={[0, 4, 4, 0]} />
+                          <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 12px", fontSize: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
+                          <Bar dataKey="count" name="Prescriptions" fill="url(#med-bar-h)" radius={[0, 6, 6, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
                     </SimpleChartCard>
@@ -1466,13 +1752,21 @@ export default function AnalyticsPage() {
                     <h4 className="mb-2 text-sm font-medium text-gray-600">Prescription Trend (Last 6 Months)</h4>
                     <SimpleChartCard title="" height={240} colorIndex={7}>
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={prescriptionStats.monthlyTrend}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <AreaChart data={prescriptionStats.monthlyTrend}>
+                          <ChartGradientDefs prefix="trend" from={COLOR_SCHEMES[7].gradFrom} to={COLOR_SCHEMES[7].gradTo} />
+                          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                           <XAxis dataKey="month" stroke="#9ca3af" fontSize={12} />
                           <YAxis stroke="#9ca3af" fontSize={12} allowDecimals={false} />
-                          <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "8px 12px", fontSize: "12px" }} />
-                          <Line type="monotone" dataKey="count" name="Prescriptions" stroke={COLOR_SCHEMES[7].fill} strokeWidth={2.5} dot={{ r: 4, fill: COLOR_SCHEMES[7].fill }} activeDot={{ r: 6 }} />
-                        </LineChart>
+                          <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "8px 12px", fontSize: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
+                          <Area
+                            type="monotone"
+                            dataKey="count"
+                            name="Prescriptions"
+                            stroke={`url(#trend-line)`}
+                            strokeWidth={2.5}
+                            fill="url(#trend-area)"
+                          />
+                        </AreaChart>
                       </ResponsiveContainer>
                     </SimpleChartCard>
                   </div>
@@ -1499,7 +1793,7 @@ export default function AnalyticsPage() {
                         <Cell key={index} fill={COLOR_SCHEMES[(index + 0) % COLOR_SCHEMES.length].fill} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "6px 10px", fontSize: "11px" }} />
+                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "6px 10px", fontSize: "11px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
                     <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: "10px", paddingTop: "4px" }} />
                   </PieChart>
                 </ResponsiveContainer>
@@ -1508,11 +1802,12 @@ export default function AnalyticsPage() {
               <SimpleChartCard title="Today's Services" subtitle="Service distribution" colorIndex={1}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={todayServiceData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <ChartGradientDefs prefix="tsvc" from={COLOR_SCHEMES[1].gradFrom} to={COLOR_SCHEMES[1].gradTo} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="name" stroke="#9ca3af" fontSize={10} />
                     <YAxis stroke="#9ca3af" fontSize={11} allowDecimals={false} />
-                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "6px 10px", fontSize: "11px" }} />
-                    <Bar dataKey="count" name="Appointments" fill={COLOR_SCHEMES[1].fill} radius={[4, 4, 0, 0]} />
+                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "6px 10px", fontSize: "11px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
+                    <Bar dataKey="count" name="Appointments" fill="url(#tsvc-bar)" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </SimpleChartCard>
@@ -1520,11 +1815,12 @@ export default function AnalyticsPage() {
               <SimpleChartCard title="Today's Time Sessions" subtitle="Time-of-day view" colorIndex={2}>
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={todayTimeData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <ChartGradientDefs prefix="ttm" from={COLOR_SCHEMES[2].gradFrom} to={COLOR_SCHEMES[2].gradTo} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                     <XAxis dataKey="name" stroke="#9ca3af" fontSize={8} interval={0} angle={-30} textAnchor="end" height={80} />
                     <YAxis stroke="#9ca3af" fontSize={11} allowDecimals={false} />
-                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "6px 10px", fontSize: "11px" }} />
-                    <Bar dataKey="count" name="Appointments" fill={COLOR_SCHEMES[2].fill} radius={[4, 4, 0, 0]} />
+                    <Tooltip contentStyle={{ backgroundColor: "white", border: "1px solid #e5e7eb", borderRadius: "10px", padding: "6px 10px", fontSize: "11px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }} />
+                    <Bar dataKey="count" name="Appointments" fill="url(#ttm-bar)" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </SimpleChartCard>
