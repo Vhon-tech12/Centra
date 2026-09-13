@@ -16,25 +16,39 @@ const CLINIC_TIME_BLOCKS = [
 ];
 
 const BOOKING_OUTCOME_LIST = ["Confirmed", "Cancelled", "Rejected"];
-
-function startOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function addMonths(date: Date, months: number) {
-  return new Date(date.getFullYear(), date.getMonth() + months, 1);
-}
-
-function monthLabel(date: Date) {
-  return date.toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
-}
+const ALL_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 function safePercentage(value: number, total: number) {
   if (!total) return 0;
   return Math.round((value / total) * 100);
+}
+
+/**
+ * Format a period label from a start date + span (in months).
+ * - 1 month  → "March 2025"
+ * - N months → "Jan – Dec 2025" (or "Oct – Mar 2025" for cross-year)
+ */
+function rangeLabel(start: Date, monthCount: number) {
+  if (monthCount === 1) {
+    return start.toLocaleDateString("en-US", {
+      month: "long",
+      year: "numeric",
+    });
+  }
+
+  const end = new Date(
+    start.getFullYear(),
+    start.getMonth() + monthCount - 1,
+    1
+  );
+
+  const startLabel = start.toLocaleDateString("en-US", { month: "short" });
+  const endLabel = end.toLocaleDateString("en-US", {
+    month: "short",
+    year: "numeric",
+  });
+
+  return `${startLabel} – ${endLabel}`;
 }
 
 function getHourFromAppointmentTime(time?: string | null) {
@@ -108,7 +122,24 @@ function sortEntriesDescending<T extends { count: number }>(items: T[]) {
   return [...items].sort((a, b) => b.count - a.count);
 }
 
-export async function GET() {
+/**
+ * Parse ?months=1,3,5,7 → [1,3,5,7]
+ * Falls back to all 12 months when missing/invalid/empty.
+ */
+function parseMonths(raw: string | null): number[] {
+  if (!raw) return [...ALL_MONTHS];
+
+  const parsed = raw
+    .split(",")
+    .map((m) => parseInt(m.trim(), 10))
+    .filter((m) => Number.isFinite(m) && m >= 1 && m <= 12);
+
+  const unique = Array.from(new Set(parsed)).sort((a, b) => a - b);
+
+  return unique.length > 0 ? unique : [...ALL_MONTHS];
+}
+
+export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
 
   if (!session || !session.user?.email) {
@@ -130,17 +161,41 @@ export async function GET() {
     );
   }
 
-  try {
-    const now = new Date();
-    const currentMonthStart = startOfMonth(now);
-    const nextMonthStart = addMonths(currentMonthStart, 1);
-    const previousMonthStart = addMonths(currentMonthStart, -1);
+  // ── Parse filter params ──
+  const { searchParams } = new URL(request.url);
+  const yearParam = searchParams.get("year");
+  const monthsParam = searchParams.get("months");
 
-    const currentMonthAppointments = await prisma.appointment.findMany({
+  const now = new Date();
+  const parsedYear = yearParam ? parseInt(yearParam, 10) : now.getFullYear();
+  const selectedYear = Number.isFinite(parsedYear)
+    ? parsedYear
+    : now.getFullYear();
+  const selectedMonths = parseMonths(monthsParam);
+
+  // ── Compute selected period range ──
+  const firstMonth = selectedMonths[0]; // e.g. 1 (Jan)
+  const lastMonth = selectedMonths[selectedMonths.length - 1]; // e.g. 12 (Dec)
+
+  const rangeStart = new Date(selectedYear, firstMonth - 1, 1);
+  const rangeEnd = new Date(selectedYear, lastMonth, 1); // exclusive (1st day of next month)
+
+  // ── Previous period: same span, immediately before rangeStart ──
+  const monthSpan = selectedMonths.length;
+  const prevRangeStart = new Date(
+    selectedYear,
+    firstMonth - 1 - monthSpan,
+    1
+  );
+  const prevRangeEnd = rangeStart;
+
+  try {
+    // Fetch appointments in the outer range (may include gap months if user picked e.g. Jan, Mar, Jun)
+    const rangeAppointments = await prisma.appointment.findMany({
       where: {
         appointmentDate: {
-          gte: currentMonthStart,
-          lt: nextMonthStart,
+          gte: rangeStart,
+          lt: rangeEnd,
         },
       },
       select: {
@@ -157,11 +212,18 @@ export async function GET() {
       },
     });
 
+    // Strict filter — keep only appointments whose month is actually selected
+    const currentMonthAppointments = rangeAppointments.filter((a) => {
+      const month = a.appointmentDate.getMonth() + 1;
+      const year = a.appointmentDate.getFullYear();
+      return year === selectedYear && selectedMonths.includes(month);
+    });
+
     const previousMonthBookings = await prisma.appointment.count({
       where: {
         appointmentDate: {
-          gte: previousMonthStart,
-          lt: currentMonthStart,
+          gte: prevRangeStart,
+          lt: prevRangeEnd,
         },
       },
     });
@@ -315,33 +377,35 @@ export async function GET() {
       }))
     );
 
+    // ── Recommendations ──
     const recommendations: string[] = [];
+    const isSingleMonth = selectedMonths.length === 1;
 
     if (bookingGrowthPercentage >= 15) {
       recommendations.push(
-        `Bookings increased by ${bookingGrowthPercentage}% compared with last month. Consider adding more clinic slots or staff coverage during high-demand sessions.`
+        `Bookings increased by ${bookingGrowthPercentage}% compared with the previous period. Consider adding more clinic slots or staff coverage during high-demand sessions.`
       );
     } else if (bookingGrowthPercentage <= -15) {
       recommendations.push(
         `Bookings decreased by ${Math.abs(
           bookingGrowthPercentage
-        )}% compared with last month. Consider targeted promotions, patient follow-ups, or service visibility improvements.`
+        )}% compared with the previous period. Consider targeted promotions, patient follow-ups, or service visibility improvements.`
       );
     } else {
       recommendations.push(
-        "Bookings are relatively stable compared with last month. Continue monitoring demand by day and one-hour clinic session."
+        "Bookings are relatively stable compared with the previous period. Continue monitoring demand by day and one-hour clinic session."
       );
     }
 
     if (topService) {
       recommendations.push(
-        `${topService.name} is the most requested service this month. Ensure enough doctors, equipment, and clinic support are available for this service.`
+        `${topService.name} is the most requested service in the selected period. Ensure enough doctors, equipment, and clinic support are available for this service.`
       );
     }
 
     if (lowestService) {
       recommendations.push(
-        `${lowestService.name} has the lowest demand this month. Review whether this service needs better promotion, pricing review, or clearer patient information.`
+        `${lowestService.name} has the lowest demand in the selected period. Review whether this service needs better promotion, pricing review, or clearer patient information.`
       );
     }
 
@@ -365,15 +429,23 @@ export async function GET() {
 
     if (doctorWorkload.length > 1 && doctorWorkload[0].percentage >= 50) {
       recommendations.push(
-        `${doctorWorkload[0].doctorName} is handling ${doctorWorkload[0].percentage}% of assigned appointments this month. Consider balancing doctor workload.`
+        `${doctorWorkload[0].doctorName} is handling ${doctorWorkload[0].percentage}% of assigned appointments in this period. Consider balancing doctor workload.`
       );
     }
+
+    // ── Labels ──
+    const currentMonthLabel = rangeLabel(rangeStart, monthSpan);
+    const previousMonthLabel = rangeLabel(prevRangeStart, monthSpan);
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
 
-      currentMonthLabel: monthLabel(currentMonthStart),
-      previousMonthLabel: monthLabel(previousMonthStart),
+      currentMonthLabel,
+      previousMonthLabel,
+
+      // extra fields for reference
+      selectedYear,
+      selectedMonths,
 
       currentMonthBookings,
       previousMonthBookings,
