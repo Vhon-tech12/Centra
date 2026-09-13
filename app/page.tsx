@@ -17,7 +17,7 @@ export default async function Home() {
 
   return (
     <div>
-      <Hero  />
+      <Hero announcements={announcements} />
       <Service />
       <About />
       <Footer />
