@@ -1228,100 +1228,175 @@ export default function HeadTemplateModal({
           </div>
         </div>
 
-        {/* RIGHT SIDEBAR - UPDATED */}
-        <div className="hidden lg:flex w-64 md:w-72 lg:w-80 bg-slate-800 border-l border-slate-700 flex-col flex-shrink-0">
-          <div className="p-3 md:p-4 border-b border-slate-700">
+        {/* ============================================================ */}
+        {/* RIGHT SIDEBAR - IMPROVED CLINICAL NOTES (no Regions)        */}
+        {/* ============================================================ */}
+        <div className="hidden lg:flex w-72 lg:w-80 bg-slate-800 border-l border-slate-700 flex-col flex-shrink-0">
+          {/* Header with instructions */}
+          <div className="p-4 border-b border-slate-700 bg-gradient-to-br from-slate-800 to-slate-800/60">
             <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              <span>📋</span> Clinical Notes
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400">📋</span>
+              Clinical Notes
             </h3>
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+              Document your clinical findings for this patient. Follow the two steps below — pick a ready-made template, then edit as needed.
+            </p>
           </div>
-          <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4">
-            {/* Regions */}
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-2"><span>📍</span> Regions ({tab})</label>
-              <div className="flex flex-wrap gap-1">
-                {REGIONS[tab].map((region) => (
-                  <button key={region.id} onClick={() => { selectRegion(region.id); setPopup({ region, x: window.innerWidth - 280, y: 120 + (REGIONS[tab].indexOf(region) * 40) }); }} className={`px-2 py-1 text-xs rounded-md transition-colors touch-manipulation ${selectedRegion === region.id ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>
-                    {region.label}
-                  </button>
-                ))}
-              </div>
-            </div>
 
-            {/* FINDINGS - renamed from Quick Templates */}
-            <div className="space-y-2">
+          <div className="flex-1 overflow-y-auto p-4 space-y-5">
+            {/* STEP 1 — Choose a template */}
+            <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                  <span>📝</span> Findings
+                <label className="text-xs font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white">1</span>
+                  Choose a Findings Template
                 </label>
                 <button
                   onClick={() => setShowAddTemplate(true)}
-                  className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                  className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
+                  title="Create your own template"
                 >
                   <span>➕</span> Add
                 </button>
               </div>
+
+              <p className="text-[11px] leading-relaxed text-slate-400">
+                Select a pre-written finding for the{" "}
+                <span className="font-semibold text-slate-200">{tab}</span> that
+                matches what you observe. The text below auto-fills — you can
+                still edit it afterwards.
+              </p>
+
+              {/* Info hint box */}
+              <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-2.5 py-2">
+                <p className="flex items-start gap-1.5 text-[10px] leading-relaxed text-blue-300">
+                  <span className="mt-[1px]">💡</span>
+                  <span>
+                    Templates are clinically accurate descriptions saved by
+                    doctors. Using them saves time and keeps records consistent.
+                  </span>
+                </p>
+              </div>
+
               <select
                 value={selectedTemplate}
                 onChange={(e) => {
                   if (e.target.value === "") clearTemplateSelection();
                   else applyTemplate(e.target.value);
                 }}
-                className="w-full bg-slate-700/50 border border-slate-600 rounded-lg p-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full bg-slate-700/50 border border-slate-600 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500 hover:border-slate-500 transition-colors"
                 disabled={isLoadingTemplates}
               >
-                <option value="">{isLoadingTemplates ? "Loading..." : "Select findings..."}</option>
+                <option value="">
+                  {isLoadingTemplates ? "Loading templates..." : "Select findings..."}
+                </option>
                 {allTemplates.map((template) => (
                   <option key={template.id || template.name} value={template.name}>
                     {template.name}
                   </option>
                 ))}
               </select>
-              {selectedTemplate && (
-                <button onClick={() => clearTemplateSelection()} className="text-xs text-slate-400 hover:text-slate-300 flex items-center gap-1">✕ Clear</button>
-              )}
-              <p className="text-xs text-slate-500">Select a findings template to auto-fill notes.</p>
 
-              {/* Custom Templates List */}
+              {/* Selected template indicator */}
+              {selectedTemplate && (
+                <div className="flex items-center justify-between rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1.5">
+                  <span className="flex items-center gap-1.5 text-[10px] font-medium text-emerald-300">
+                    <span>✓</span>
+                    Using:{" "}
+                    <span className="font-semibold">{selectedTemplate}</span>
+                  </span>
+                  <button
+                    onClick={clearTemplateSelection}
+                    className="text-emerald-400 hover:text-emerald-300 text-xs leading-none"
+                    title="Clear selection"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Custom templates list */}
               {dbTemplates.length > 0 && (
                 <div className="mt-2 space-y-1">
-                  <label className="text-xs font-medium text-slate-400">Your Templates</label>
+                  <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                    Your Saved Templates
+                  </label>
                   {dbTemplates.map((t) => (
-                    <div key={t.id} className="flex items-center justify-between bg-slate-700/30 rounded px-2 py-1">
-                      <span className="text-xs text-slate-300 truncate">{t.name}</span>
-                      <button onClick={() => handleDeleteTemplate(t.id!)} className="text-red-400 hover:text-red-300 text-xs">✕</button>
+                    <div
+                      key={t.id}
+                      className="flex items-center justify-between rounded border border-slate-700 bg-slate-700/30 px-2 py-1"
+                    >
+                      <button
+                        onClick={() => applyTemplate(t.name)}
+                        className="flex-1 truncate text-left text-xs text-slate-300 hover:text-white transition-colors"
+                        title={t.name}
+                      >
+                        {t.name}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTemplate(t.id!)}
+                        className="ml-2 text-red-400 hover:text-red-300 text-xs"
+                        title="Delete template"
+                      >
+                        ✕
+                      </button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Findings Textarea - ONLY FINDINGS */}
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Findings</label>
+            {/* STEP 2 — Edit findings */}
+            <div className="space-y-2.5">
+              <label className="text-xs font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white">2</span>
+                Clinical Findings
+              </label>
+
+              <p className="text-[11px] leading-relaxed text-slate-400">
+                Review and edit the findings below. Add measured values,
+                patient-specific notes, or additional observations.
+              </p>
+
               <textarea
                 value={clinicalNotes.findings}
-                onChange={(e) => setClinicalNotes((prev) => ({ ...prev, findings: e.target.value }))}
-                placeholder="Document clinical findings..."
-                className="w-full h-48 bg-slate-700/50 border border-slate-600 rounded-lg p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                onChange={(e) =>
+                  setClinicalNotes((prev) => ({ ...prev, findings: e.target.value }))
+                }
+                placeholder="Document clinical findings here. You can also type directly if no template matches."
+                className="w-full h-52 bg-slate-700/50 border border-slate-600 rounded-lg p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none transition-colors leading-relaxed"
               />
+
+              <div className="flex items-center justify-between text-[10px] text-slate-500">
+                <span>{clinicalNotes.findings.length} characters</span>
+                {clinicalNotes.findings.trim().length > 0 && (
+                  <span className="flex items-center gap-1 text-emerald-400">
+                    ✓ Ready to save
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Actions */}
-          <div className="p-3 md:p-4 border-t border-slate-700 space-y-2">
-            <button onClick={handleSaveNotes} className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors touch-manipulation">
-              Save Notes
+          <div className="p-4 border-t border-slate-700 space-y-2 bg-slate-800">
+            <button
+              onClick={handleSaveNotes}
+              disabled={clinicalNotes.findings.trim().length === 0}
+              className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed disabled:text-slate-500 text-white text-sm font-semibold rounded-lg transition-colors touch-manipulation"
+            >
+              💾 Save Findings
             </button>
             <button
               onClick={() => {
                 setClinicalNotes({ findings: "" });
                 setSelectedRegion(null);
                 setPopup(null);
+                setSelectedTemplate("");
               }}
               className="w-full py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg transition-colors touch-manipulation"
             >
-              Clear Notes & Selection
+              Clear All
             </button>
           </div>
         </div>
@@ -1331,100 +1406,211 @@ export default function HeadTemplateModal({
       {showAddTemplate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-slate-800 border border-slate-600 rounded-xl p-6 w-full max-w-md shadow-2xl">
-            <h4 className="text-lg font-semibold text-white mb-4">Add New Findings Template</h4>
+            <h4 className="text-lg font-semibold text-white mb-1">Create a New Findings Template</h4>
+            <p className="text-[11px] text-slate-400 mb-4 leading-relaxed">
+              Save a reusable finding for the <span className="font-semibold text-slate-200">{tab}</span> so you can apply it in future consultations with one click.
+            </p>
             <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="Template Name (e.g., Normal Ear Exam)"
-                value={newTemplate.name}
-                onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
-                className="w-full bg-slate-700/50 border border-slate-600 rounded-lg p-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <textarea
-                placeholder="Findings Description"
-                value={newTemplate.findings}
-                onChange={(e) => setNewTemplate({ ...newTemplate, findings: e.target.value })}
-                className="w-full h-32 bg-slate-700/50 border border-slate-600 rounded-lg p-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              />
+              <div>
+                <label className="text-[11px] font-medium uppercase tracking-wider text-slate-400 mb-1 block">
+                  Template Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Normal Ear Examination"
+                  value={newTemplate.name}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded-lg p-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-medium uppercase tracking-wider text-slate-400 mb-1 block">
+                  Findings Description
+                </label>
+                <textarea
+                  placeholder="Write the clinical finding text that will auto-fill when this template is selected."
+                  value={newTemplate.findings}
+                  onChange={(e) => setNewTemplate({ ...newTemplate, findings: e.target.value })}
+                  className="w-full h-32 bg-slate-700/50 border border-slate-600 rounded-lg p-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none leading-relaxed"
+                />
+              </div>
             </div>
-            <div className="flex gap-2 mt-4">
-              <button onClick={handleAddTemplate} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Save Template</button>
-              <button onClick={() => setShowAddTemplate(false)} className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg">Cancel</button>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={handleAddTemplate}
+                disabled={!newTemplate.name.trim()}
+                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed disabled:text-slate-500 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                Save Template
+              </button>
+              <button
+                onClick={() => setShowAddTemplate(false)}
+                className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* NOTES DRAWER (tablet) - Updated */}
+      {/* ============================================================ */}
+      {/* NOTES DRAWER (tablet) - IMPROVED (no Regions)                */}
+      {/* ============================================================ */}
       {notesDrawerOpen && (
         <div className="lg:hidden fixed inset-0 z-50 flex items-end justify-center">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setNotesDrawerOpen(false)} />
-          <div className="relative bg-slate-900 w-full max-h-[80vh] rounded-t-2xl shadow-2xl border border-slate-700 p-4 overflow-y-auto animate-slide-up">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2"><span>📋</span> Clinical Notes</h3>
-              <button onClick={() => setNotesDrawerOpen(false)} className="text-slate-400 hover:text-white text-2xl">✕</button>
+          <div className="relative bg-slate-900 w-full max-h-[85vh] rounded-t-2xl shadow-2xl border border-slate-700 overflow-y-auto animate-slide-up">
+            {/* Drawer header */}
+            <div className="sticky top-0 z-10 bg-slate-900 border-b border-slate-700 px-4 pt-4 pb-3">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <span>📋</span> Clinical Notes
+                </h3>
+                <button
+                  onClick={() => setNotesDrawerOpen(false)}
+                  className="text-slate-400 hover:text-white text-2xl leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Pick a template for the <span className="font-semibold text-slate-200">{tab}</span>, then review and edit the findings below.
+              </p>
             </div>
 
-            {/* Regions */}
-            <div className="space-y-2 mb-4">
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-2"><span>📍</span> Regions ({tab})</label>
-              <div className="flex flex-wrap gap-1">
-                {REGIONS[tab].map((region) => (
-                  <button key={region.id} onClick={() => { selectRegion(region.id); setPopup({ region, x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 50 }); setNotesDrawerOpen(false); }} className={`px-2 py-1 text-xs rounded-md transition-colors touch-manipulation ${selectedRegion === region.id ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-slate-600"}`}>
-                    {region.label}
+            <div className="p-4 space-y-5">
+              {/* STEP 1 — Template */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white">1</span>
+                    Choose a Findings Template
+                  </label>
+                  <button
+                    onClick={() => setShowAddTemplate(true)}
+                    className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                  >
+                    ➕ Add
                   </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Findings Templates */}
-            <div className="space-y-2 mb-4">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Findings</label>
-                <button onClick={() => setShowAddTemplate(true)} className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"><span>➕</span> Add</button>
-              </div>
-              <select
-                value={selectedTemplate}
-                onChange={(e) => {
-                  if (e.target.value === "") clearTemplateSelection();
-                  else applyTemplate(e.target.value);
-                }}
-                className="w-full bg-slate-700/50 border border-slate-600 rounded-lg p-2 text-sm text-white"
-                disabled={isLoadingTemplates}
-              >
-                <option value="">{isLoadingTemplates ? "Loading..." : "Select findings..."}</option>
-                {allTemplates.map((template) => (
-                  <option key={template.id || template.name} value={template.name}>{template.name}</option>
-                ))}
-              </select>
-              {dbTemplates.length > 0 && (
-                <div className="mt-2 space-y-1">
-                  {dbTemplates.map((t) => (
-                    <div key={t.id} className="flex items-center justify-between bg-slate-700/30 rounded px-2 py-1">
-                      <span className="text-xs text-slate-300 truncate">{t.name}</span>
-                      <button onClick={() => handleDeleteTemplate(t.id!)} className="text-red-400 hover:text-red-300 text-xs">✕</button>
-                    </div>
-                  ))}
                 </div>
-              )}
-            </div>
 
-            {/* Findings Textarea only */}
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">Findings</label>
+                <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2">
+                  <p className="flex items-start gap-1.5 text-[10px] leading-relaxed text-blue-300">
+                    <span className="mt-[1px]">💡</span>
+                    <span>
+                      Templates are pre-written findings. Selecting one auto-fills
+                      the text below — you can still edit it.
+                    </span>
+                  </p>
+                </div>
+
+                <select
+                  value={selectedTemplate}
+                  onChange={(e) => {
+                    if (e.target.value === "") clearTemplateSelection();
+                    else applyTemplate(e.target.value);
+                  }}
+                  className="w-full bg-slate-700/50 border border-slate-600 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isLoadingTemplates}
+                >
+                  <option value="">
+                    {isLoadingTemplates ? "Loading templates..." : "Select findings..."}
+                  </option>
+                  {allTemplates.map((template) => (
+                    <option key={template.id || template.name} value={template.name}>
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+
+                {selectedTemplate && (
+                  <div className="flex items-center justify-between rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1.5">
+                    <span className="flex items-center gap-1.5 text-[10px] font-medium text-emerald-300">
+                      <span>✓</span> Using:{" "}
+                      <span className="font-semibold">{selectedTemplate}</span>
+                    </span>
+                    <button
+                      onClick={clearTemplateSelection}
+                      className="text-emerald-400 hover:text-emerald-300 text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {dbTemplates.length > 0 && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                      Your Saved Templates
+                    </label>
+                    {dbTemplates.map((t) => (
+                      <div
+                        key={t.id}
+                        className="flex items-center justify-between rounded border border-slate-700 bg-slate-700/30 px-2 py-1"
+                      >
+                        <button
+                          onClick={() => applyTemplate(t.name)}
+                          className="flex-1 truncate text-left text-xs text-slate-300 hover:text-white"
+                        >
+                          {t.name}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTemplate(t.id!)}
+                          className="ml-2 text-red-400 hover:text-red-300 text-xs"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* STEP 2 — Findings */}
+              <div className="space-y-2.5">
+                <label className="text-xs font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-[10px] font-bold text-white">2</span>
+                  Clinical Findings
+                </label>
+                <p className="text-[11px] leading-relaxed text-slate-400">
+                  Review and edit below. Add measured values or patient-specific
+                  observations.
+                </p>
                 <textarea
                   value={clinicalNotes.findings}
-                  onChange={(e) => setClinicalNotes((prev) => ({ ...prev, findings: e.target.value }))}
-                  placeholder="Document clinical findings..."
-                  className="w-full h-40 bg-slate-700/50 border border-slate-600 rounded-lg p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  onChange={(e) =>
+                    setClinicalNotes((prev) => ({ ...prev, findings: e.target.value }))
+                  }
+                  placeholder="Document clinical findings here..."
+                  className="w-full h-40 bg-slate-700/50 border border-slate-600 rounded-lg p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none leading-relaxed"
                 />
+                <p className="text-[10px] text-slate-500 text-right">
+                  {clinicalNotes.findings.length} characters
+                </p>
               </div>
             </div>
 
-            <div className="mt-4 flex gap-2">
-              <button onClick={handleSaveNotes} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg touch-manipulation">Save Notes</button>
-              <button onClick={() => { setClinicalNotes({ findings: "" }); setSelectedRegion(null); setPopup(null); }} className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg touch-manipulation">Clear</button>
+            {/* Drawer actions */}
+            <div className="sticky bottom-0 bg-slate-900 border-t border-slate-700 p-4 flex gap-2">
+              <button
+                onClick={handleSaveNotes}
+                disabled={clinicalNotes.findings.trim().length === 0}
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed disabled:text-slate-500 text-white text-sm font-semibold rounded-lg touch-manipulation transition-colors"
+              >
+                💾 Save Findings
+              </button>
+              <button
+                onClick={() => {
+                  setClinicalNotes({ findings: "" });
+                  setSelectedRegion(null);
+                  setPopup(null);
+                  setSelectedTemplate("");
+                }}
+                className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-medium rounded-lg touch-manipulation transition-colors"
+              >
+                Clear All
+              </button>
             </div>
           </div>
         </div>
