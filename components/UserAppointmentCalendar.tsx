@@ -15,6 +15,7 @@ import {
   Shield,
   Calendar,
   Loader2,
+  FileText,
 } from "lucide-react";
 
 type ServiceType = "ear" | "nose" | "throat" | "aesthetics";
@@ -108,13 +109,17 @@ export default function UserAppointmentCalendar() {
   const [patientType, setPatientType] = useState<"new" | "existing">("new");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
 
-  // ===== FORM STATE (LAHAT NG FIELDS) =====
+  // ===== FORM STATE =====
   const [fullName, setFullName] = useState("");
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("");
   const [contactNumber, setContactNumber] = useState("");
   const [birthdate, setBirthdate] = useState("");
   const [serviceType, setServiceType] = useState<ServiceType>("ear");
+
+  // ===== DATA PRIVACY CONSENT STATE =====
+  const [privacyConsent, setPrivacyConsent] = useState(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   // ===== AUTO-SEARCH STATE =====
   const [isSearching, setIsSearching] = useState(false);
@@ -157,9 +162,8 @@ export default function UserAppointmentCalendar() {
   const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart]);
   const weekKey = useMemo(() => weekDays.map((d) => formatDate(d)).join(","), [weekDays]);
 
-  // ===== AUTO-SEARCH FOR RETURNING PATIENT (NAME + BIRTHDATE LANG) =====
+  // ===== AUTO-SEARCH FOR RETURNING PATIENT =====
   useEffect(() => {
-    // Only run when patientType is "existing"
     if (patientType !== "existing") {
       setSelectedPatient(null);
       setIsVerified(false);
@@ -167,7 +171,6 @@ export default function UserAppointmentCalendar() {
       return;
     }
 
-    // Need at least name (2 chars) and birthdate
     if (!fullName.trim() || fullName.trim().length < 2 || !birthdate.trim()) {
       setSearchError(null);
       setSelectedPatient(null);
@@ -175,7 +178,6 @@ export default function UserAppointmentCalendar() {
       return;
     }
 
-    // Validate birthdate
     const dateObj = new Date(birthdate);
     if (isNaN(dateObj.getTime())) {
       setSearchError("Invalid birthdate format");
@@ -184,7 +186,6 @@ export default function UserAppointmentCalendar() {
       return;
     }
 
-    // Debounce search
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
 
     searchTimeoutRef.current = setTimeout(async () => {
@@ -192,7 +193,6 @@ export default function UserAppointmentCalendar() {
       setSearchError(null);
 
       try {
-        // ✅ TINANGGAL ANG EMAIL SA API CALL — NAME + BIRTHDATE LANG
         const res = await fetch(
           `/api/patients/find-by-email-name-birthdate?name=${encodeURIComponent(
             fullName.trim()
@@ -201,7 +201,6 @@ export default function UserAppointmentCalendar() {
         const data = await res.json();
 
         if (data.found && data.patient) {
-          // ✅ Found existing patient
           setSelectedPatient(data.patient);
           setIsVerified(true);
           setAge(data.patient.age?.toString() || "");
@@ -209,7 +208,6 @@ export default function UserAppointmentCalendar() {
           setContactNumber(data.patient.phone || "");
           setSearchError(null);
         } else {
-          // ❌ No match — this will be treated as new patient
           setSelectedPatient(null);
           setIsVerified(false);
           setSearchError(data.error || null);
@@ -229,11 +227,9 @@ export default function UserAppointmentCalendar() {
 
   // ===== CHECK IF FORM IS COMPLETE =====
   const isFormComplete = useMemo(() => {
-    // For returning patient: dapat may selectedPatient at verified
     if (patientType === "existing" && selectedPatient) {
-      return true;
+      return privacyConsent;
     }
-    // For new patient: validate all fields including birthdate
     return (
       fullName.trim() !== "" &&
       age.trim() !== "" &&
@@ -242,9 +238,10 @@ export default function UserAppointmentCalendar() {
       gender.trim() !== "" &&
       contactNumber.length === 11 &&
       isValidPHMobile(contactNumber) &&
-      birthdate.trim() !== ""
+      birthdate.trim() !== "" &&
+      privacyConsent
     );
-  }, [patientType, selectedPatient, fullName, age, gender, contactNumber, birthdate]);
+  }, [patientType, selectedPatient, fullName, age, gender, contactNumber, birthdate, privacyConsent]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -317,60 +314,22 @@ export default function UserAppointmentCalendar() {
             const key = getSlotKey(dateStr, time);
 
             if (isSunday(day)) {
-              return [
-                key,
-                {
-                  capacity: 0,
-                  occupied: 0,
-                  remaining: 0,
-                  isFull: true,
-                  reason: "Clinic is closed on Sundays",
-                } satisfies SlotInfo,
-              ] as const;
+              return [key, { capacity: 0, occupied: 0, remaining: 0, isFull: true, reason: "Clinic is closed on Sundays" } satisfies SlotInfo] as const;
             }
 
             if (isPastDay(day)) {
-              return [
-                key,
-                {
-                  capacity: 0,
-                  occupied: 0,
-                  remaining: 0,
-                  isFull: true,
-                  reason: "Past dates are unavailable",
-                } satisfies SlotInfo,
-              ] as const;
+              return [key, { capacity: 0, occupied: 0, remaining: 0, isFull: true, reason: "Past dates are unavailable" } satisfies SlotInfo] as const;
             }
 
             if (isToday(day)) {
-              return [
-                key,
-                {
-                  capacity: 0,
-                  occupied: 0,
-                  remaining: 0,
-                  isFull: true,
-                  reason: "Same-day booking is not allowed",
-                } satisfies SlotInfo,
-              ] as const;
+              return [key, { capacity: 0, occupied: 0, remaining: 0, isFull: true, reason: "Same-day booking is not allowed" } satisfies SlotInfo] as const;
             }
 
             try {
-              const res = await fetch(`/api/availability?date=${dateStr}&time=${time}`, {
-                cache: "no-store",
-              });
+              const res = await fetch(`/api/availability?date=${dateStr}&time=${time}`, { cache: "no-store" });
 
               if (!res.ok) {
-                return [
-                  key,
-                  {
-                    capacity: 0,
-                    occupied: 0,
-                    remaining: 0,
-                    isFull: true,
-                    reason: "Unavailable",
-                  } satisfies SlotInfo,
-                ] as const;
+                return [key, { capacity: 0, occupied: 0, remaining: 0, isFull: true, reason: "Unavailable" } satisfies SlotInfo] as const;
               }
 
               const data = await res.json();
@@ -383,23 +342,11 @@ export default function UserAppointmentCalendar() {
                   occupied: Number(slot.occupied ?? slot.booked ?? 0),
                   remaining: Number(slot.remaining ?? 0),
                   isFull: Boolean(slot.isFull ?? Number(slot.remaining ?? 0) <= 0),
-                  reason:
-                    typeof slot.reason === "string" && slot.reason.trim()
-                      ? slot.reason
-                      : undefined,
+                  reason: typeof slot.reason === "string" && slot.reason.trim() ? slot.reason : undefined,
                 } satisfies SlotInfo,
               ] as const;
             } catch {
-              return [
-                key,
-                {
-                  capacity: 0,
-                  occupied: 0,
-                  remaining: 0,
-                  isFull: true,
-                  reason: "Unavailable",
-                } satisfies SlotInfo,
-              ] as const;
+              return [key, { capacity: 0, occupied: 0, remaining: 0, isFull: true, reason: "Unavailable" } satisfies SlotInfo] as const;
             }
           })
         )
@@ -407,19 +354,13 @@ export default function UserAppointmentCalendar() {
 
       if (!mountedRef.current) return;
 
-      setAvailabilityMap((prev) => ({
-        ...prev,
-        ...Object.fromEntries(entries),
-      }));
-
+      setAvailabilityMap((prev) => ({ ...prev, ...Object.fromEntries(entries) }));
       fetchedWeekRef.current.add(weekKey);
     } catch (error) {
       console.error("Failed to load week availability:", error);
     } finally {
       inFlightWeekRef.current.delete(weekKey);
-      if (mountedRef.current) {
-        setLoadingSlots(false);
-      }
+      if (mountedRef.current) setLoadingSlots(false);
     }
   }, [showCalendarModal, weekDays, weekKey]);
 
@@ -429,23 +370,12 @@ export default function UserAppointmentCalendar() {
 
   const getSlotInfo = (date: Date, hour: number): SlotInfo => {
     const key = getSlotKey(formatDate(date), formatTime(hour));
-    return (
-      availabilityMap[key] ?? {
-        capacity: 0,
-        occupied: 0,
-        remaining: 0,
-        isFull: true,
-        reason: "Unavailable",
-      }
-    );
+    return availabilityMap[key] ?? { capacity: 0, occupied: 0, remaining: 0, isFull: true, reason: "Unavailable" };
   };
 
   const isDayFullyBlocked = (date: Date) => {
     if (isSunday(date) || isPastDay(date) || isToday(date)) return false;
-    return clinicHours.every((hour) => {
-      const slot = getSlotInfo(date, hour);
-      return slot.capacity <= 0;
-    });
+    return clinicHours.every((hour) => getSlotInfo(date, hour).capacity <= 0);
   };
 
   const isDayFullyBooked = (date: Date) => {
@@ -489,12 +419,8 @@ export default function UserAppointmentCalendar() {
   };
 
   const handleBookAppointment = async () => {
-    if (!selectedDate || !selectedTime || !session?.user) {
-      return;
-    }
-    if (!validateForm()) {
-      return;
-    }
+    if (!selectedDate || !selectedTime || !session?.user) return;
+    if (!validateForm()) return;
 
     setIsBooking(true);
 
@@ -503,19 +429,18 @@ export default function UserAppointmentCalendar() {
         date: formatDate(selectedDate),
         time: selectedTime,
         serviceType,
+        privacyConsent: privacyConsent,
+        privacyConsentTimestamp: new Date().toISOString(),
       };
 
-      // If we have a verified existing patient, use patientId
       if (patientType === "existing" && selectedPatient && isVerified) {
         payload.patientId = selectedPatient.id;
-        // Auto-sync updates (optional)
         if (fullName.trim() !== selectedPatient.name) payload.name = fullName.trim();
         if (age !== selectedPatient.age?.toString()) payload.age = parseInt(age) || undefined;
         if (gender !== selectedPatient.gender) payload.gender = gender || undefined;
         if (contactNumber !== selectedPatient.phone) payload.contactNumber = contactNumber;
         if (birthdate !== selectedPatient.birthdate) payload.birthdate = birthdate;
       } else {
-        // New patient: include birthdate
         payload.name = fullName.trim();
         payload.age = parseInt(age) || undefined;
         payload.gender = gender || undefined;
@@ -558,10 +483,8 @@ export default function UserAppointmentCalendar() {
   };
 
   const goToToday = () => setWeekStart(startOfWeek(new Date()));
-  const prevWeek = () =>
-    setWeekStart(new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() - 7));
-  const nextWeek = () =>
-    setWeekStart(new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 7));
+  const prevWeek = () => setWeekStart(new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() - 7));
+  const nextWeek = () => setWeekStart(new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 7));
 
   const handleBookAnother = () => {
     setShowSuccess(false);
@@ -575,6 +498,8 @@ export default function UserAppointmentCalendar() {
     setPatientType("new");
     setIsVerified(false);
     setSearchError(null);
+    setPrivacyConsent(false);
+    setShowPrivacyModal(false);
   };
 
   return (
@@ -587,9 +512,7 @@ export default function UserAppointmentCalendar() {
                 <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-indigo-700">
                   Patient Booking
                 </div>
-                <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-                  Book your appointment
-                </h2>
+                <h2 className="text-2xl font-bold tracking-tight text-slate-900">Book your appointment</h2>
                 <p className="mt-1 text-sm text-slate-500">
                   {patientType === "existing" && selectedPatient && isVerified
                     ? "✅ You're verified as a returning patient. Your existing record will be used."
@@ -600,9 +523,7 @@ export default function UserAppointmentCalendar() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
                   <p className="text-xs font-medium text-slate-500">Service</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900 capitalize">
-                    {serviceType}
-                  </p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900 capitalize">{serviceType}</p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
                   <p className="text-xs font-medium text-slate-500">Same-day</p>
@@ -618,16 +539,14 @@ export default function UserAppointmentCalendar() {
 
           {!showSuccess ? (
             <div className="space-y-8 p-6 md:p-8">
-              {/* ===== PATIENT TYPE TOGGLE ===== */}
+              {/* PATIENT TYPE TOGGLE */}
               <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-5 md:p-6">
                 <div className="flex items-center gap-3 mb-5">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700">
                     <Users className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-900">
-                      Are you a new or returning patient?
-                    </h3>
+                    <h3 className="text-lg font-semibold text-slate-900">Are you a new or returning patient?</h3>
                     <p className="text-sm text-slate-500">
                       {patientType === "existing" && selectedPatient && isVerified
                         ? "✅ You're verified as a returning patient. Your existing record will be used."
@@ -659,9 +578,7 @@ export default function UserAppointmentCalendar() {
                     ✨ New Patient
                   </button>
                   <button
-                    onClick={() => {
-                      setPatientType("existing");
-                    }}
+                    onClick={() => setPatientType("existing")}
                     className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-medium transition-all ${
                       patientType === "existing"
                         ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
@@ -674,7 +591,7 @@ export default function UserAppointmentCalendar() {
                 </div>
               </div>
 
-              {/* ===== PATIENT INFORMATION FORM (WITH BIRTHDATE) ===== */}
+              {/* PATIENT INFORMATION FORM */}
               <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-5 md:p-6">
                 <div className="mb-5 flex items-center gap-3">
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-700">
@@ -703,9 +620,7 @@ export default function UserAppointmentCalendar() {
 
                 <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
                   <div>
-                    <label className="mb-2 block text-sm font-semibold text-slate-700">
-                      Full Name
-                    </label>
+                    <label className="mb-2 block text-sm font-semibold text-slate-700">Full Name</label>
                     <input
                       type="text"
                       value={fullName}
@@ -713,9 +628,7 @@ export default function UserAppointmentCalendar() {
                       className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
                       placeholder="Enter full name"
                     />
-                    {formErrors.fullName && (
-                      <p className="mt-2 text-xs font-medium text-red-500">{formErrors.fullName}</p>
-                    )}
+                    {formErrors.fullName && <p className="mt-2 text-xs font-medium text-red-500">{formErrors.fullName}</p>}
                   </div>
 
                   <div>
@@ -726,18 +639,11 @@ export default function UserAppointmentCalendar() {
                       max="999"
                       step="1"
                       value={age}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val.length <= 3) {
-                          setAge(val);
-                        }
-                      }}
+                      onChange={(e) => { if (e.target.value.length <= 3) setAge(e.target.value); }}
                       className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
                       placeholder="Enter age"
                     />
-                    {formErrors.age && (
-                      <p className="mt-2 text-xs font-medium text-red-500">{formErrors.age}</p>
-                    )}
+                    {formErrors.age && <p className="mt-2 text-xs font-medium text-red-500">{formErrors.age}</p>}
                   </div>
 
                   <div>
@@ -752,9 +658,7 @@ export default function UserAppointmentCalendar() {
                       <option value="Female">Female</option>
                       <option value="Other">Other</option>
                     </select>
-                    {formErrors.gender && (
-                      <p className="mt-2 text-xs font-medium text-red-500">{formErrors.gender}</p>
-                    )}
+                    {formErrors.gender && <p className="mt-2 text-xs font-medium text-red-500">{formErrors.gender}</p>}
                   </div>
 
                   <div>
@@ -774,23 +678,11 @@ export default function UserAppointmentCalendar() {
                     />
                     <div className="mt-2 flex items-center justify-between text-xs">
                       <span className="text-slate-500">11 digits only</span>
-                      <span
-                        className={`font-medium ${
-                          contactNumber.length === 11
-                            ? "text-emerald-600"
-                            : contactNumber.length > 0
-                            ? "text-amber-600"
-                            : "text-slate-400"
-                        }`}
-                      >
+                      <span className={`font-medium ${contactNumber.length === 11 ? "text-emerald-600" : contactNumber.length > 0 ? "text-amber-600" : "text-slate-400"}`}>
                         {contactNumber.length}/11
                       </span>
                     </div>
-                    {formErrors.contactNumber && (
-                      <p className="mt-2 text-xs font-medium text-red-500">
-                        {formErrors.contactNumber}
-                      </p>
-                    )}
+                    {formErrors.contactNumber && <p className="mt-2 text-xs font-medium text-red-500">{formErrors.contactNumber}</p>}
                   </div>
 
                   <div>
@@ -804,13 +696,9 @@ export default function UserAppointmentCalendar() {
                       onChange={(e) => setBirthdate(e.target.value)}
                       className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100"
                     />
-                    {formErrors.birthdate && (
-                      <p className="mt-2 text-xs font-medium text-red-500">{formErrors.birthdate}</p>
-                    )}
+                    {formErrors.birthdate && <p className="mt-2 text-xs font-medium text-red-500">{formErrors.birthdate}</p>}
                     {patientType === "existing" && selectedPatient && isVerified && (
-                      <p className="mt-1 text-xs text-emerald-600">
-                        ✅ Birthdate matches existing record
-                      </p>
+                      <p className="mt-1 text-xs text-emerald-600">✅ Birthdate matches existing record</p>
                     )}
                   </div>
 
@@ -831,23 +719,46 @@ export default function UserAppointmentCalendar() {
                     </select>
                   </div>
                 </div>
+
+                {/* ===== DATA PRIVACY CONSENT BUTTON (MAG-OOPEN NG MODAL) ===== */}
+                <div className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <FileText className="h-5 w-5 text-indigo-600 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">Data Privacy Consent</p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {privacyConsent
+                            ? "✅ You have agreed to the Data Privacy Policy."
+                            : "Please read and agree to our Data Privacy Policy before booking."}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowPrivacyModal(true)}
+                      className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                        privacyConsent
+                          ? "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                          : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md"
+                      }`}
+                    >
+                      {privacyConsent ? "✅ Agreed (View)" : "Read & Agree"}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                   <div>
                     <h4 className="text-lg font-semibold text-slate-900">Schedule Selection</h4>
-                    <p className="text-sm text-slate-500">
-                      Pick a future date and available time slot.
-                    </p>
+                    <p className="text-sm text-slate-500">Pick a future date and available time slot.</p>
                   </div>
-
                   {selectedDate && selectedTime && (
                     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm">
                       <p className="font-semibold text-emerald-800">Selected schedule</p>
-                      <p className="mt-1 text-emerald-700">
-                        {selectedDate.toDateString()} at {selectedTime}
-                      </p>
+                      <p className="mt-1 text-emerald-700">{selectedDate.toDateString()} at {selectedTime}</p>
                     </div>
                   )}
                 </div>
@@ -866,6 +777,8 @@ export default function UserAppointmentCalendar() {
                     ? "Select Appointment Date & Time"
                     : patientType === "existing" && !selectedPatient
                     ? "Enter your name and birthdate to verify"
+                    : !privacyConsent
+                    ? "Please agree to the Data Privacy Policy"
                     : "Complete all patient details"}
                 </button>
               </div>
@@ -877,28 +790,20 @@ export default function UserAppointmentCalendar() {
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
                     <Check className="h-8 w-8" />
                   </div>
-                  <h2 className="mt-4 text-2xl font-bold text-slate-900">
-                    Appointment Confirmed!
-                  </h2>
-                  <p className="text-sm text-slate-500">
-                    Your appointment has been scheduled.
-                  </p>
+                  <h2 className="mt-4 text-2xl font-bold text-slate-900">Appointment Confirmed!</h2>
+                  <p className="text-sm text-slate-500">Your appointment has been scheduled.</p>
                 </div>
 
                 <div className="mt-6 rounded-2xl bg-slate-50 p-4 border border-slate-200">
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <span className="font-medium text-slate-500">Date</span>
-                    <span className="font-semibold text-slate-900">
-                      {successData?.date.toDateString()}
-                    </span>
+                    <span className="font-semibold text-slate-900">{successData?.date.toDateString()}</span>
                     <span className="font-medium text-slate-500">Time</span>
                     <span className="font-semibold text-slate-900">{successData?.time}</span>
                     <span className="font-medium text-slate-500">Duration</span>
                     <span className="font-semibold text-slate-900">1 hour</span>
                     <span className="font-medium text-slate-500">Service</span>
-                    <span className="font-semibold text-slate-900 capitalize">
-                      {successData?.service}
-                    </span>
+                    <span className="font-semibold text-slate-900 capitalize">{successData?.service}</span>
                     <span className="font-medium text-slate-500">Patient</span>
                     <span className="font-semibold text-slate-900">{successData?.patient}</span>
                     <span className="font-medium text-slate-500">Contact</span>
@@ -906,36 +811,17 @@ export default function UserAppointmentCalendar() {
                   </div>
                 </div>
 
-                <div className="mt-4 flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-lg font-bold">
-                    👨‍⚕️
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-900">Dr. Wade Warren</p>
-                    <p className="text-xs text-slate-500">ENT Specialist</p>
-                  </div>
-                </div>
-
                 <div className="mt-6 flex flex-col sm:flex-row gap-3">
-                  <button
-                    className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2.5 font-medium text-slate-700 transition hover:bg-slate-50"
-                    onClick={() => alert("🔍 Find similar appointments (demo)")}
-                  >
+                  <button className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2.5 font-medium text-slate-700 transition hover:bg-slate-50" onClick={() => alert("🔍 Find similar appointments (demo)")}>
                     Find similar
                   </button>
-                  <button
-                    className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 font-medium text-white transition hover:bg-indigo-700"
-                    onClick={() => alert("👤 Redirect to Patient Portal (demo)")}
-                  >
+                  <button className="flex-1 rounded-xl bg-indigo-600 px-4 py-2.5 font-medium text-white transition hover:bg-indigo-700" onClick={() => alert("👤 Redirect to Patient Portal (demo)")}>
                     Patient Portal
                   </button>
                 </div>
 
                 <div className="mt-6 text-center">
-                  <button
-                    onClick={handleBookAnother}
-                    className="text-sm font-medium text-indigo-600 hover:underline"
-                  >
+                  <button onClick={handleBookAnother} className="text-sm font-medium text-indigo-600 hover:underline">
                     ← Book another appointment
                   </button>
                 </div>
@@ -944,6 +830,123 @@ export default function UserAppointmentCalendar() {
           )}
         </div>
       </div>
+
+      {/* ─── DATA PRIVACY MODAL ─── */}
+      {showPrivacyModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_30px_100px_rgba(15,23,42,0.3)]">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-5 bg-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+                  <Shield className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Data Privacy Policy</h2>
+                  <p className="text-xs text-slate-500">Please read carefully before agreeing.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPrivacyModal(false)}
+                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-200 hover:text-slate-700"
+                type="button"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Scrollable Body - DITO MO ILALAGAY YUNG MADAMING MESSAGE */}
+            <div className="flex-1 overflow-y-auto p-6 md:p-8 text-sm text-slate-600 space-y-5 leading-relaxed">
+              <p className="font-semibold text-slate-800 text-base">Centra Clinic PH - Data Privacy Notice</p>
+              
+              <p>
+                In accordance with the <strong>Data Privacy Act of 2012 (Republic Act No. 10173)</strong>, its Implementing Rules and Regulations, and other applicable laws, Centra Clinic PH is committed to protecting and respecting your privacy. This notice explains how we collect, use, store, and protect your personal and medical information.
+              </p>
+
+              <div>
+                <h4 className="font-semibold text-slate-800 mb-2">1. Information We Collect</h4>
+                <p>We collect the following personal and sensitive personal information when you register and book an appointment:</p>
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                  <li>Full Name, Age, Gender, and Birthdate</li>
+                  <li>Contact Number and Email Address</li>
+                  <li>Medical History, Diagnosis, and Treatment Records</li>
+                  <li>3D Visualization Scans and related medical images</li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-slate-800 mb-2">2. How We Use Your Information</h4>
+                <p>Your information is used solely for the following purposes:</p>
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                  <li>To schedule, confirm, and manage your appointments.</li>
+                  <li>To provide accurate medical diagnosis and treatment.</li>
+                  <li>To maintain your medical records for future consultations.</li>
+                  <li>To communicate important updates regarding your health and appointments.</li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-slate-800 mb-2">3. Data Sharing and Disclosure</h4>
+                <p>
+                  We do not sell, trade, or rent your personal information to third parties. Your data may only be shared with authorized medical personnel within Centra Clinic PH who are directly involved in your care. We may also disclose information when required by law or legal process.
+                </p>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-slate-800 mb-2">4. Data Security and Retention</h4>
+                <p>
+                  We implement strict security measures, including encryption, role-based access control, and secure servers, to protect your data from unauthorized access, alteration, or disclosure. Your records are retained for a period of five (5) years as required by medical regulations, after which they will be securely disposed of.
+                </p>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-slate-800 mb-2">5. Your Rights as a Data Subject</h4>
+                <p>Under the Data Privacy Act, you have the right to:</p>
+                <ul className="list-disc pl-5 mt-2 space-y-1">
+                  <li><strong>Be Informed:</strong> Know how your data is being processed.</li>
+                  <li><strong>Object:</strong> Withdraw consent or object to data processing.</li>
+                  <li><strong>Access:</strong> Request a copy of your personal data.</li>
+                  <li><strong>Rectify:</strong> Correct any inaccurate information.</li>
+                  <li><strong>Erasure or Blocking:</strong> Request deletion of your data under certain conditions.</li>
+                  <li><strong>Damages:</strong> Be indemnified for any damages sustained due to violation of your rights.</li>
+                </ul>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-slate-800 mb-2">6. Contact Us</h4>
+                <p>
+                  If you have questions, concerns, or wish to exercise your rights, you may contact our Data Protection Officer (DPO) at <strong>dpo@centraclinic.ph</strong> or visit our clinic at 401, Centra Clinic PH.
+                </p>
+              </div>
+
+              <p className="text-xs text-slate-400 pt-4 border-t border-slate-100">
+                By clicking "I Agree", you acknowledge that you have read, understood, and consented to the collection, use, and processing of your personal and medical information as described in this Data Privacy Notice.
+              </p>
+            </div>
+
+            {/* Footer - AGREE BUTTON */}
+            <div className="border-t border-slate-200 px-6 py-4 bg-slate-50 flex flex-col sm:flex-row justify-end gap-3">
+              <button
+                onClick={() => setShowPrivacyModal(false)}
+                className="rounded-xl border border-slate-300 bg-white px-6 py-3 font-semibold text-slate-700 transition hover:bg-slate-100"
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setPrivacyConsent(true);
+                  setShowPrivacyModal(false);
+                }}
+                className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-8 py-3 font-semibold text-white shadow-lg transition hover:opacity-95"
+                type="button"
+              >
+                I Agree to the Data Privacy Policy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── CALENDAR MODAL ─── */}
       {showCalendarModal && (
@@ -955,16 +958,9 @@ export default function UserAppointmentCalendar() {
                   <CalendarDays className="h-6 w-6 text-indigo-600" />
                   Select Appointment Date & Time
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Sundays are closed and same-day booking is disabled.
-                </p>
+                <p className="mt-1 text-sm text-slate-500">Sundays are closed and same-day booking is disabled.</p>
               </div>
-
-              <button
-                onClick={() => setShowCalendarModal(false)}
-                className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                type="button"
-              >
+              <button onClick={() => setShowCalendarModal(false)} className="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" type="button">
                 ✕
               </button>
             </div>
@@ -972,25 +968,13 @@ export default function UserAppointmentCalendar() {
             <div className="max-h-[calc(92vh-100px)] overflow-y-auto p-6 md:p-8">
               <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-100 p-1.5">
-                  <button
-                    onClick={goToToday}
-                    className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:shadow"
-                    type="button"
-                  >
+                  <button onClick={goToToday} className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:shadow" type="button">
                     Today
                   </button>
-                  <button
-                    onClick={prevWeek}
-                    className="rounded-xl p-2.5 text-slate-700 transition hover:bg-slate-200"
-                    type="button"
-                  >
+                  <button onClick={prevWeek} className="rounded-xl p-2.5 text-slate-700 transition hover:bg-slate-200" type="button">
                     <ChevronLeft size={16} />
                   </button>
-                  <button
-                    onClick={nextWeek}
-                    className="rounded-xl p-2.5 text-slate-700 transition hover:bg-slate-200"
-                    type="button"
-                  >
+                  <button onClick={nextWeek} className="rounded-xl p-2.5 text-slate-700 transition hover:bg-slate-200" type="button">
                     <ChevronRight size={16} />
                   </button>
                 </div>
@@ -1020,10 +1004,7 @@ export default function UserAppointmentCalendar() {
                         Time
                       </div>
                       {clinicHours.map((hour) => (
-                        <div
-                          key={hour}
-                          className="flex h-16 items-center justify-end border-b border-slate-100 pr-3 font-mono text-xs text-slate-500"
-                        >
+                        <div key={hour} className="flex h-16 items-center justify-end border-b border-slate-100 pr-3 font-mono text-xs text-slate-500">
                           {formatDisplayTime(hour)}
                         </div>
                       ))}
@@ -1035,61 +1016,22 @@ export default function UserAppointmentCalendar() {
                       const sameDayBlocked = isToday(day);
                       const fullyBlocked = isDayFullyBlocked(day);
                       const fullyBooked = isDayFullyBooked(day);
-
-                      const unavailable =
-                        sunday || past || sameDayBlocked || fullyBlocked || fullyBooked;
+                      const unavailable = sunday || past || sameDayBlocked || fullyBlocked || fullyBooked;
 
                       return (
-                        <div
-                          key={day.toISOString()}
-                          className={`border-r border-slate-200 last:border-r-0 ${
-                            unavailable
-                              ? sameDayBlocked
-                                ? "bg-amber-50/60"
-                                : "bg-slate-50"
-                              : "bg-white"
-                          }`}
-                        >
+                        <div key={day.toISOString()} className={`border-r border-slate-200 last:border-r-0 ${unavailable ? (sameDayBlocked ? "bg-amber-50/60" : "bg-slate-50") : "bg-white"}`}>
                           <div className="flex h-14 flex-col items-center justify-center gap-1 border-b border-slate-200 bg-gradient-to-b from-slate-50 to-white p-2 text-xs font-semibold text-slate-700">
-                            <span>
-                              {days[day.getDay()]} {day.getDate()}
-                            </span>
-
-                            {fullyBlocked && !sunday && !past && !sameDayBlocked && (
-                              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] text-red-600">
-                                Blocked
-                              </span>
-                            )}
-
-                            {sunday && (
-                              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] text-orange-600">
-                                Closed
-                              </span>
-                            )}
-
-                            {sameDayBlocked && !sunday && !past && (
-                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-700">
-                                No Same-Day
-                              </span>
-                            )}
-
-                            {fullyBooked && !fullyBlocked && !sunday && !sameDayBlocked && (
-                              <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] text-orange-600">
-                                Full
-                              </span>
-                            )}
-
-                            {past && !sunday && (
-                              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] text-slate-600">
-                                Past
-                              </span>
-                            )}
+                            <span>{days[day.getDay()]} {day.getDate()}</span>
+                            {fullyBlocked && !sunday && !past && !sameDayBlocked && <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] text-red-600">Blocked</span>}
+                            {sunday && <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] text-orange-600">Closed</span>}
+                            {sameDayBlocked && !sunday && !past && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-700">No Same-Day</span>}
+                            {fullyBooked && !fullyBlocked && !sunday && !sameDayBlocked && <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] text-orange-600">Full</span>}
+                            {past && !sunday && <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] text-slate-600">Past</span>}
                           </div>
 
                           {clinicHours.map((hour) => {
                             const slot = getSlotInfo(day, hour);
                             const available = isSlotAvailable(day, hour);
-
                             return (
                               <button
                                 key={hour}
@@ -1105,14 +1047,9 @@ export default function UserAppointmentCalendar() {
                                         ? "bg-slate-50 text-slate-400"
                                         : "bg-transparent text-slate-400"
                                 } disabled:cursor-not-allowed`}
-                                title={
-                                  available
-                                    ? `Available (${slot.remaining} slots left)`
-                                    : getUnavailableReason(day, hour)
-                                }
+                                title={available ? `Available (${slot.remaining} slots left)` : getUnavailableReason(day, hour)}
                               >
                                 {hour}:00
-
                                 {slot.capacity > 0 && (
                                   <span className="absolute left-1/2 top-0 z-10 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-full bg-slate-900 px-2 py-1 text-[10px] text-white opacity-0 shadow-lg transition-all group-hover:opacity-100">
                                     {slot.occupied}/{slot.capacity}
@@ -1137,9 +1074,7 @@ export default function UserAppointmentCalendar() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-[2px]">
           <div className="mx-4 w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_30px_90px_rgba(15,23,42,0.25)]">
             <h3 className="text-2xl font-semibold text-slate-900">Confirm Booking</h3>
-            <p className="mt-1 text-sm text-slate-500">
-              Please review your appointment details before submitting.
-            </p>
+            <p className="mt-1 text-sm text-slate-500">Please review your appointment details before submitting.</p>
 
             <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -1160,15 +1095,11 @@ export default function UserAppointmentCalendar() {
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-medium text-slate-500">Birthdate</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">
-                  {birthdate ? new Date(birthdate).toLocaleDateString() : "—"}
-                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{birthdate ? new Date(birthdate).toLocaleDateString() : "—"}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-medium text-slate-500">Date</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">
-                  {selectedDate.toDateString()}
-                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{selectedDate.toDateString()}</p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-medium text-slate-500">Time</p>
@@ -1176,9 +1107,7 @@ export default function UserAppointmentCalendar() {
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:col-span-2">
                 <p className="text-xs font-medium text-slate-500">Service</p>
-                <p className="mt-1 text-sm font-semibold capitalize text-slate-900">
-                  {serviceType}
-                </p>
+                <p className="mt-1 text-sm font-semibold capitalize text-slate-900">{serviceType}</p>
               </div>
             </div>
 
@@ -1186,16 +1115,11 @@ export default function UserAppointmentCalendar() {
               <button
                 onClick={handleBookAppointment}
                 disabled={isBooking}
-                className={`flex-1 rounded-2xl px-4 py-3 font-semibold text-white shadow-lg transition ${
-                  isBooking
-                    ? "bg-slate-400 cursor-not-allowed"
-                    : "bg-gradient-to-r from-indigo-600 to-violet-600 hover:opacity-95"
-                }`}
+                className={`flex-1 rounded-2xl px-4 py-3 font-semibold text-white shadow-lg transition ${isBooking ? "bg-slate-400 cursor-not-allowed" : "bg-gradient-to-r from-indigo-600 to-violet-600 hover:opacity-95"}`}
                 type="button"
               >
                 {isBooking ? "Booking..." : "Confirm Booking"}
               </button>
-
               <button
                 onClick={() => {
                   setShowConfirmModal(false);
@@ -1213,4 +1137,4 @@ export default function UserAppointmentCalendar() {
       )}
     </div>
   );
-}
+} 
