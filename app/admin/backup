@@ -1,1 +1,357 @@
 
+// app/admin/backup/page.tsx
+"use client";
+
+import { useState, useEffect } from "react";
+
+interface BackupRecord {
+  id: string;
+  filename: string;
+  date: string;
+  time: string;
+  size: string;
+  type: "Manual" | "Auto";
+}
+
+interface USBDrive {
+  path: string;
+  label: string;
+  platform: string;
+}
+
+export default function BackupPage() {
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "error" | "">("");
+  const [backups, setBackups] = useState<BackupRecord[]>([]);
+  const [lastStats, setLastStats] = useState<Record<string, number> | null>(null);
+
+  const [usbDrives, setUsbDrives] = useState<USBDrive[]>([]);
+  const [selectedUSB, setSelectedUSB] = useState<string>("");
+  const [loadingUSB, setLoadingUSB] = useState(false);
+  const [autoSaveToUSB, setAutoSaveToUSB] = useState(true);
+
+  useEffect(() => {
+    fetchBackupHistory();
+    fetchUSBDrives();
+  }, []);
+
+  const fetchBackupHistory = async () => {
+    try {
+      const res = await fetch("/api/admin/backup/history");
+      const data = await res.json();
+      if (data.success) setBackups(data.backups);
+    } catch (error) {
+      console.error("Failed to fetch backup history", error);
+    }
+  };
+
+  const fetchUSBDrives = async () => {
+    setLoadingUSB(true);
+    try {
+      const res = await fetch("/api/admin/backup/usb-drives");
+      const data = await res.json();
+      if (data.success) {
+        setUsbDrives(data.drives || []);
+        if (data.drives?.length > 0) {
+          setSelectedUSB(data.drives[0].path);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch USB drives", error);
+    } finally {
+      setLoadingUSB(false);
+    }
+  };
+
+  const handleBackup = async () => {
+    setLoading(true);
+    setMessage("");
+    setLastStats(null);
+
+    try {
+      const payload: any = { action: "backup" };
+
+      // Kung may selected USB at naka-enable ang auto-save, idagdag sa payload
+      if (autoSaveToUSB && selectedUSB) {
+        payload.usbPath = selectedUSB;
+      }
+
+      const res = await fetch("/api/admin/backup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        let msg = `✅ ${data.message} (${data.size})`;
+        if (data.usbSaved) {
+          msg += `\n💾 USB: ${data.usbPath}`;
+        } else if (data.usbError) {
+          msg += `\n⚠️ USB save failed: ${data.usbError}`;
+        }
+        setMessage(msg);
+        setMessageType("success");
+        setLastStats(data.stats || null);
+        fetchBackupHistory();
+      } else {
+        setMessage(`❌ ${data.message}${data.error ? ` — ${data.error}` : ""}`);
+        setMessageType("error");
+      }
+    } catch (error: any) {
+      setMessage(`❌ Backup failed: ${error?.message || "Please try again."}`);
+      setMessageType("error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (backups.length === 0) {
+      setMessage("❌ No backup files available to restore.");
+      setMessageType("error");
+      return;
+    }
+
+    const latest = backups[0];
+    const confirmed = confirm(
+      `⚠️ WARNING: This will OVERWRITE ALL current data!\n\n` +
+        `Restore from: ${latest.filename}\n` +
+        `Date: ${latest.date} ${latest.time}\n\n` +
+        `Are you absolutely sure?`
+    );
+
+    if (!confirmed) return;
+
+    setLoading(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/admin/backup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "restore",
+          filename: latest.filename,
+          restoreFrom: "local",
+        }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setMessage(`✅ ${data.message}`);
+        setMessageType("success");
+      } else {
+        setMessage(`❌ ${data.message}`);
+        setMessageType("error");
+      }
+    } catch (error: any) {
+      setMessage(`❌ Restore failed: ${error?.message || "Please try again."}`);
+      setMessageType("error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownload = (filename: string) => {
+    window.location.href = `/api/admin/backup/download?file=${encodeURIComponent(filename)}`;
+  };
+
+  const handleDelete = async (filename: string) => {
+    if (!confirm(`Delete backup ${filename}?`)) return;
+
+    try {
+      const res = await fetch(`/api/admin/backup?file=${encodeURIComponent(filename)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMessage("✅ Backup deleted");
+        setMessageType("success");
+        fetchBackupHistory();
+      } else {
+        setMessage(`❌ ${data.message}`);
+        setMessageType("error");
+      }
+    } catch (error) {
+      setMessage("❌ Failed to delete backup");
+      setMessageType("error");
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-6xl p-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-800">Backup & Restore</h1>
+        <p className="text-gray-600">
+          Manage database backups and recovery for Centra Clinic PH
+        </p>
+      </div>
+
+      {message && (
+        <div
+          className={`mb-4 whitespace-pre-line rounded-lg border p-4 ${
+            messageType === "success"
+              ? "border-green-200 bg-green-50 text-green-800"
+              : "border-red-200 bg-red-50 text-red-800"
+          }`}
+        >
+          {message}
+        </div>
+      )}
+
+      {/* ─── CREATE BACKUP ─── */}
+      <div className="mb-6 rounded-lg bg-white p-6 shadow">
+        <h2 className="mb-4 text-lg font-semibold">Create Backup</h2>
+        <p className="mb-4 text-sm text-gray-600">
+          Generate a complete backup of all clinic data — patient records,
+          appointments, SOAP notes, prescriptions, and more.
+        </p>
+
+        {/* USB Drive Selection */}
+        <div className="mb-5 rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+              </svg>
+              <span className="text-sm font-semibold text-blue-900">Save to USB Drive</span>
+            </div>
+            <button
+              type="button"
+              onClick={fetchUSBDrives}
+              disabled={loadingUSB}
+              className="rounded-md bg-blue-100 px-3 py-1.5 text-xs font-medium text-blue-700 transition hover:bg-blue-200 disabled:opacity-50"
+            >
+              {loadingUSB ? "Scanning..." : "🔄 Rescan"}
+            </button>
+          </div>
+
+          {usbDrives.length === 0 ? (
+            <p className="text-sm text-blue-700">
+              ⚠️ Walang USB drive na naka-detect. I-plug ang USB drive sa server PC at i-click ang "Rescan".
+            </p>
+          ) : (
+            <>
+              <label className="mb-2 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={autoSaveToUSB}
+                  onChange={(e) => setAutoSaveToUSB(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-blue-900">
+                  Auto-save sa USB kapag nag-backup
+                </span>
+              </label>
+
+              <select
+                value={selectedUSB}
+                onChange={(e) => setSelectedUSB(e.target.value)}
+                disabled={!autoSaveToUSB}
+                className="w-full rounded-md border border-blue-300 bg-white px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 disabled:opacity-50"
+              >
+                {usbDrives.map((drive) => (
+                  <option key={drive.path} value={drive.path}>
+                    💾 {drive.label} — {drive.path}
+                  </option>
+                ))}
+              </select>
+
+              <p className="mt-2 text-xs text-blue-700">
+                ✅ Detected: {usbDrives.length} USB drive{usbDrives.length > 1 ? "s" : ""}
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={handleBackup}
+            disabled={loading}
+            className="rounded-lg bg-blue-600 px-5 py-2.5 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {loading ? "⏳ Processing..." : "💾 Backup Now"}
+          </button>
+          <button
+            onClick={handleRestore}
+            disabled={loading || backups.length === 0}
+            className="rounded-lg bg-red-600 px-5 py-2.5 font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          >
+            🔄 Restore Latest Backup
+          </button>
+        </div>
+
+        {lastStats && (
+          <div className="mt-5 rounded-lg border border-green-200 bg-green-50 p-4">
+            <p className="mb-2 text-sm font-semibold text-green-800">
+              ✅ Backup Contents:
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-xs text-green-700 sm:grid-cols-4">
+              <span>👤 Users: {lastStats.users}</span>
+              <span>🧑 Patients: {lastStats.patients}</span>
+              <span>📅 Appointments: {lastStats.appointments}</span>
+              <span>📝 SOAP Notes: {lastStats.soapNotes}</span>
+              <span>💊 Medicines: {lastStats.medicines}</span>
+              <span>📋 Prescriptions: {lastStats.prescriptions}</span>
+              <span>🏥 Medical History: {lastStats.medicalHistories}</span>
+              <span>🔔 Notifications: {lastStats.notifications}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ─── BACKUP HISTORY ─── */}
+      <div className="rounded-lg bg-white p-6 shadow">
+        <h2 className="mb-4 text-lg font-semibold">Backup History (Local Server)</h2>
+        {backups.length === 0 ? (
+          <p className="py-8 text-center text-gray-500">
+            No backups found. Click &quot;Backup Now&quot; to create one.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-gray-50">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">Date</th>
+                  <th className="px-4 py-3 text-left font-semibold">Time</th>
+                  <th className="px-4 py-3 text-left font-semibold">Size</th>
+                  <th className="px-4 py-3 text-left font-semibold">Type</th>
+                  <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {backups.map((backup) => (
+                  <tr key={backup.id} className="border-b hover:bg-gray-50">
+                    <td className="px-4 py-3">{backup.date}</td>
+                    <td className="px-4 py-3">{backup.time}</td>
+                    <td className="px-4 py-3">{backup.size}</td>
+                    <td className="px-4 py-3">
+                      <span className="rounded bg-blue-100 px-2 py-1 text-xs text-blue-700">
+                        {backup.type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => handleDownload(backup.filename)}
+                        className="mr-3 text-blue-600 hover:underline"
+                      >
+                        ⬇️ Download
+                      </button>
+                      <button
+                        onClick={() => handleDelete(backup.filename)}
+                        className="text-red-600 hover:underline"
+                      >
+                        🗑️ Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
