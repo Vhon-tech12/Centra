@@ -468,7 +468,6 @@ export default function AnalyticsPage() {
     }
   }, []);
 
-  // ─── Now accepts year + months filter ───
   const fetchConsultationData = useCallback(async () => {
     const { ok, json } = await safeJsonFetch(
       `/api/admin/dashboard/consultations?year=${year}&months=${selectedMonths.join(",")}`
@@ -483,7 +482,6 @@ export default function AnalyticsPage() {
     }
   }, [selectedMonths, year]);
 
-  // ─── Now accepts year + months filter ───
   const fetchBusinessInsights = useCallback(async () => {
     const { ok, json } = await safeJsonFetch(
       `/api/admin/dashboard/business-insights?year=${year}&months=${selectedMonths.join(",")}`
@@ -495,7 +493,6 @@ export default function AnalyticsPage() {
     }
   }, [selectedMonths, year]);
 
-  // ─── Now accepts year + months filter (backend needs same update) ───
   const fetchFindingsData = useCallback(async () => {
     const { ok, json } = await safeJsonFetch(
       `/api/admin/dashboard/findings?year=${year}&months=${selectedMonths.join(",")}`
@@ -507,7 +504,6 @@ export default function AnalyticsPage() {
     }
   }, [selectedMonths, year]);
 
-  // ─── Now accepts year + months filter (backend needs same update) ───
   const fetchPrescriptionStats = useCallback(async () => {
     try {
       const res = await fetch(
@@ -525,7 +521,6 @@ export default function AnalyticsPage() {
     }
   }, [selectedMonths, year]);
 
-  // ─── Now accepts year + months filter (backend needs same update) ───
   const fetchAgeDistribution = useCallback(async () => {
     try {
       const res = await fetch(
@@ -543,7 +538,6 @@ export default function AnalyticsPage() {
     }
   }, [selectedMonths, year]);
 
-  // ─── Now accepts year + months filter (backend needs same update) ───
   const fetchGenderDistribution = useCallback(async () => {
     try {
       const res = await fetch(
@@ -605,6 +599,13 @@ export default function AnalyticsPage() {
       year: 'numeric',
     });
     const timeStr = now.toLocaleTimeString();
+    
+    // Format para sa "Today's Appointments Summary (Sep 19 2026)"
+    const shortDateStr = now.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }).replace(',', ''); // Tinatanggal ang comma para maging "Sep 19 2026"
 
     const consultMap = new Map<string, number>();
     consultationData.forEach((item) => {
@@ -880,6 +881,37 @@ export default function AnalyticsPage() {
     }
 
     if (prescriptionStats) {
+      const n = prescriptionStats.monthlyTrend.length;
+      const maxVal = Math.max(...prescriptionStats.monthlyTrend.map(d => d.count), 1);
+      
+      // SVG Line Chart Dimensions
+      const svgWidth = 600;
+      const svgHeight = 220;
+      const padLeft = 40;
+      const padRight = 40;
+      const padTop = 40;
+      const padBottom = 40;
+      const chartW = svgWidth - padLeft - padRight;
+      const chartH = svgHeight - padTop - padBottom;
+      const xStep = n > 1 ? chartW / (n - 1) : chartW;
+
+      let polylinePoints = "";
+      let circlesHtml = "";
+      let labelsHtml = "";
+      let xLabelsHtml = "";
+
+      prescriptionStats.monthlyTrend.forEach((item, i) => {
+        const x = padLeft + i * xStep;
+        const y = padTop + chartH - (item.count / maxVal) * chartH;
+        
+        polylinePoints += `${x},${y} `;
+        circlesHtml += `<circle cx="${x}" cy="${y}" r="4" fill="#c026d3" />`;
+        labelsHtml += `<text x="${x}" y="${y - 10}" text-anchor="middle" font-size="11" font-weight="bold" fill="#000">${item.count}</text>`;
+        
+        const monthLabel = item.month.replace(' 20', "'");
+        xLabelsHtml += `<text x="${x}" y="${svgHeight - 15}" text-anchor="middle" font-size="10" font-weight="500" fill="#000">${monthLabel}</text>`;
+      });
+
       html += `
   <div class="section">
     <div class="section-title">Prescription Analytics</div>
@@ -894,20 +926,31 @@ export default function AnalyticsPage() {
       });
       html += `</tbody></table>
       
-    <p style="font-weight:bold; margin-top:15px; font-size:11px;">Prescription Trend (Last 6 Months)</p>
-    <table>
-      <thead><tr><th>Month</th><th class="text-right">Count</th></tr></thead>
-      <tbody>`;
-      prescriptionStats.monthlyTrend.forEach((item) => {
-        html += `<tr><td>${item.month}</td><td class="text-right">${item.count}</td></tr>`;
-      });
-      html += `</tbody></table></div>`;
+    <!-- Prescription Trend Graph (SVG Line Chart) -->
+    <div style="margin-top: 25px; page-break-inside: avoid;">
+      <p style="font-weight:bold; font-size:11px; margin-bottom: 15px;">Prescription Trend (Last 6 Months) - Graph</p>
+      <svg width="100%" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}" style="overflow: visible;">
+        <!-- Y-axis baseline -->
+        <line x1="${padLeft}" y1="${padTop + chartH}" x2="${padLeft + chartW}" y2="${padTop + chartH}" stroke="#000" stroke-width="2" />
+        
+        <!-- The Line -->
+        <polyline points="${polylinePoints.trim()}" fill="none" stroke="#c026d3" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+        
+        <!-- Points and Values -->
+        ${circlesHtml}
+        ${labelsHtml}
+        
+        <!-- X-axis Labels -->
+        ${xLabelsHtml}
+      </svg>
+    </div>
+  </div>`;
     }
 
     if (todayAppointments.length > 0) {
       html += `
   <div class="section">
-    <div class="section-title">Today's Appointments Summary</div>
+    <div class="section-title">Today's Appointments Summary <span style="font-weight: normal; text-transform: none; font-size: 11px;">(${shortDateStr})</span></div>
     <table>
       <thead><tr><th>Category</th><th>Value</th><th class="text-right">Count</th><th class="text-right">Percentage</th></tr></thead>
       <tbody>`;
